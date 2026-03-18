@@ -1,0 +1,36 @@
+{
+  "run_dir": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo",
+  "raw_dir": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw",
+  "data_bin_dir": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/data-bin",
+  "logs_dir": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/logs",
+  "preprocess_log": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/logs/preprocess.log",
+  "splits": [
+    "test",
+    "train",
+    "valid"
+  ],
+  "command": [
+    "/export/data/sfan/miniforge3/envs/maskpredict/bin/python",
+    "preprocess.py",
+    "--source-lang",
+    "en",
+    "--target-lang",
+    "de",
+    "--destdir",
+    "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/data-bin",
+    "--workers",
+    "1",
+    "--srcdict",
+    "/export/data/sfan/mllm/Mask-Predict/checkpoints/maskPredict_en_de/dict.en.txt",
+    "--tgtdict",
+    "/export/data/sfan/mllm/Mask-Predict/checkpoints/maskPredict_en_de/dict.de.txt",
+    "--trainpref",
+    "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/train",
+    "--validpref",
+    "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/valid",
+    "--testpref",
+    "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/test"
+  ],
+  "stdout": "Namespace(alignfile=None, destdir='/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/data-bin', joined_dictionary=False, nwordssrc=-1, nwordstgt=-1, only_source=False, output_format='binary', padding_factor=8, source_lang='en', srcdict='/export/data/sfan/mllm/Mask-Predict/checkpoints/maskPredict_en_de/dict.en.txt', target_lang='de', testpref='/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/test', tgtdict='/export/data/sfan/mllm/Mask-Predict/checkpoints/maskPredict_en_de/dict.de.txt', thresholdsrc=0, thresholdtgt=0, trainpref='/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/train', validpref='/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/valid', workers=1)\n| [en] Dictionary: 32767 types\n| [en] /export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/train.en: 1 sents, 7 tokens, 14.3% replaced by <unk>\n| [en] Dictionary: 32767 types\n| [en] /export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/valid.en: 1 sents, 7 tokens, 14.3% replaced by <unk>\n| [en] Dictionary: 32767 types\n| [en] /export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/test.en: 1 sents, 8 tokens, 0.0% replaced by <unk>\n| [de] Dictionary: 32767 types\n| [de] /export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/train.de: 1 sents, 6 tokens, 16.7% replaced by <unk>\n| [de] Dictionary: 32767 types\n| [de] /export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/valid.de: 1 sents, 6 tokens, 16.7% replaced by <unk>\n| [de] Dictionary: 32767 types\n| [de] /export/data/sfan/mllm/Mask-Predict/output/en_de_demo/raw/test.de: 1 sents, 6 tokens, 16.7% replaced by <unk>\n| Wrote preprocessed data to /export/data/sfan/mllm/Mask-Predict/output/en_de_demo/data-bin\n",
+  "stderr": ""
+}
