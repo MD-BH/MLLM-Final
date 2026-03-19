@@ -16,47 +16,22 @@
         },
         {
           "iteration": 1,
-          "masked_tokens": 6,
-          "text": "Die Hauptstadt Frankreichs ist Paris ."
-        },
-        {
-          "iteration": 2,
           "masked_tokens": 5,
           "text": "Die Hauptstadt Frankreichs ist Paris ."
         },
         {
-          "iteration": 3,
+          "iteration": 2,
           "masked_tokens": 4,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 3,
+          "masked_tokens": 2,
           "text": "Die Hauptstadt Frankreichs ist Paris ."
         },
         {
           "iteration": 4,
-          "masked_tokens": 4,
-          "text": "Die Hauptstadt Frankreichs ist Paris ."
-        },
-        {
-          "iteration": 5,
-          "masked_tokens": 3,
-          "text": "Die Hauptstadt Frankreichs ist Paris ."
-        },
-        {
-          "iteration": 6,
-          "masked_tokens": 2,
-          "text": "Die Hauptstadt Frankreichs ist Paris ."
-        },
-        {
-          "iteration": 7,
-          "masked_tokens": 2,
-          "text": "Die Hauptstadt Frankreichs ist Paris ."
-        },
-        {
-          "iteration": 8,
           "masked_tokens": 1,
-          "text": "Die Hauptstadt Frankreichs ist Paris ."
-        },
-        {
-          "iteration": 9,
-          "masked_tokens": 0,
           "text": "Die Hauptstadt Frankreichs ist Paris ."
         }
       ]
@@ -65,57 +40,32 @@
       "id": 1,
       "source": "The capital of Germany is Berlin .",
       "target": "Die Hauptstadt Deutschlands ist Berlin .",
-      "hypothesis": "Hauptstadt Deutschlands ist Berlin .",
+      "hypothesis": "Die Hauptstadt Deutschlands ist Berlin .",
       "iterations": [
         {
           "iteration": 0,
           "masked_tokens": 0,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
+          "text": "Die Hauptstadt Deutschlands ist Berlin ."
         },
         {
           "iteration": 1,
           "masked_tokens": 5,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
+          "text": "Die Hauptstadt Deutschlands ist Berlin ."
         },
         {
           "iteration": 2,
           "masked_tokens": 4,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
+          "text": "Die Hauptstadt Deutschlands ist Berlin ."
         },
         {
           "iteration": 3,
-          "masked_tokens": 4,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
+          "masked_tokens": 2,
+          "text": "Die Hauptstadt Deutschlands ist Berlin ."
         },
         {
           "iteration": 4,
-          "masked_tokens": 3,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
-        },
-        {
-          "iteration": 5,
-          "masked_tokens": 3,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
-        },
-        {
-          "iteration": 6,
-          "masked_tokens": 2,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
-        },
-        {
-          "iteration": 7,
           "masked_tokens": 1,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
-        },
-        {
-          "iteration": 8,
-          "masked_tokens": 1,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
-        },
-        {
-          "iteration": 9,
-          "masked_tokens": 0,
-          "text": "Hauptstadt Deutschlands ist Berlin ."
+          "text": "Die Hauptstadt Deutschlands ist Berlin ."
         }
       ]
     },
@@ -132,53 +82,28 @@
         },
         {
           "iteration": 1,
-          "masked_tokens": 15,
-          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
-        },
-        {
-          "iteration": 2,
           "masked_tokens": 13,
           "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
-          "iteration": 3,
-          "masked_tokens": 11,
-          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
-        },
-        {
-          "iteration": 4,
+          "iteration": 2,
           "masked_tokens": 10,
           "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
-          "iteration": 5,
-          "masked_tokens": 8,
-          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
-        },
-        {
-          "iteration": 6,
+          "iteration": 3,
           "masked_tokens": 6,
           "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
-          "iteration": 7,
-          "masked_tokens": 5,
-          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
-        },
-        {
-          "iteration": 8,
+          "iteration": 4,
           "masked_tokens": 3,
-          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
-        },
-        {
-          "iteration": 9,
-          "masked_tokens": 1,
           "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         }
       ]
     }
   ],
-  "bleu": 88.45364231763347,
+  "bleu": 92.16670230638925,
   "command": [
     "/export/data/sfan/miniforge3/envs/maskpredict/bin/python",
     "generate_cmlm.py",
@@ -195,7 +120,7 @@
     "--max-sentences",
     "20",
     "--decoding-iterations",
-    "10",
+    "5",
     "--decoding-strategy",
     "mask_predict",
     "--length-beam",
