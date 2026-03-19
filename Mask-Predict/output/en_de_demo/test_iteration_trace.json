@@ -121,64 +121,64 @@
     },
     {
       "id": 2,
-      "source": "China is a country in Asia .",
-      "target": "China ist ein Land in Asien .",
-      "hypothesis": "China ist ein asiatisches Land .",
+      "source": "China is a large country in Asia , and the capital of the country is Beijing .",
+      "target": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Beijing .",
+      "hypothesis": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking .",
       "iterations": [
         {
           "iteration": 0,
           "masked_tokens": 0,
-          "text": "China ist ein asiatiasiLand ."
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 1,
-          "masked_tokens": 8,
-          "text": "China ist ein asiatiasiLand ."
+          "masked_tokens": 15,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 2,
-          "masked_tokens": 7,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 13,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 3,
-          "masked_tokens": 6,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 11,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 4,
-          "masked_tokens": 5,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 10,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 5,
-          "masked_tokens": 4,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 8,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 6,
-          "masked_tokens": 3,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 6,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 7,
-          "masked_tokens": 2,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 5,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 8,
-          "masked_tokens": 1,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 3,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         },
         {
           "iteration": 9,
-          "masked_tokens": 0,
-          "text": "China ist ein asiatisches Land ."
+          "masked_tokens": 1,
+          "text": "China ist ein großes Land in Asien , und die Hauptstadt des Landes ist Peking ."
         }
       ]
     }
   ],
-  "bleu": 67.69160148952335,
+  "bleu": 88.45364231763347,
   "command": [
     "/export/data/sfan/miniforge3/envs/maskpredict/bin/python",
     "generate_cmlm.py",
