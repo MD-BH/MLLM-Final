@@ -14,7 +14,7 @@ import math
 import torch.nn.functional as F
 import re
 
-from fairseq import pybleu, options, progress_bar, tasks, tokenizer, utils, strategies
+from fairseq import checkpoint_utils, pybleu, options, progress_bar, tasks, tokenizer, utils, strategies
 from fairseq.meters import TimeMeter
 from fairseq.strategies.strategy_utils import duplicate_encoder_out
 
@@ -48,8 +48,13 @@ def main(args):
 
     # Load ensemble
     print('| loading model(s) from {}'.format(args.path))
-    models, _ = utils.load_ensemble_for_inference(args.path.split(':'), task, model_arg_overrides=eval(args.model_overrides))
-    models = [model.cuda() for model in models]
+    models, _ = checkpoint_utils.load_model_ensemble(
+        args.path.split(':'),
+        arg_overrides=eval(args.model_overrides),
+        task=task,
+    )
+    if use_cuda:
+        models = [model.cuda() for model in models]
 
     # Optimize ensemble for generation
     for model in models:

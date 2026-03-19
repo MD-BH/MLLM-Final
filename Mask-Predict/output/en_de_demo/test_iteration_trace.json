@@ -1,0 +1,207 @@
+{
+  "run_dir": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo",
+  "data_bin_dir": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/data-bin",
+  "logs_dir": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/logs",
+  "records": [
+    {
+      "id": 0,
+      "source": "The capital of France is Paris .",
+      "target": "Die Hauptstadt Frankreichs ist Paris .",
+      "hypothesis": "Die Hauptstadt Frankreichs ist Paris .",
+      "iterations": [
+        {
+          "iteration": 0,
+          "masked_tokens": 0,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 1,
+          "masked_tokens": 6,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 2,
+          "masked_tokens": 5,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 3,
+          "masked_tokens": 4,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 4,
+          "masked_tokens": 4,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 5,
+          "masked_tokens": 3,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 6,
+          "masked_tokens": 2,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 7,
+          "masked_tokens": 2,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 8,
+          "masked_tokens": 1,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        },
+        {
+          "iteration": 9,
+          "masked_tokens": 0,
+          "text": "Die Hauptstadt Frankreichs ist Paris ."
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "source": "The capital of Germany is Berlin .",
+      "target": "Die Hauptstadt Deutschlands ist Berlin .",
+      "hypothesis": "Hauptstadt Deutschlands ist Berlin .",
+      "iterations": [
+        {
+          "iteration": 0,
+          "masked_tokens": 0,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 1,
+          "masked_tokens": 5,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 2,
+          "masked_tokens": 4,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 3,
+          "masked_tokens": 4,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 4,
+          "masked_tokens": 3,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 5,
+          "masked_tokens": 3,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 6,
+          "masked_tokens": 2,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 7,
+          "masked_tokens": 1,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 8,
+          "masked_tokens": 1,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        },
+        {
+          "iteration": 9,
+          "masked_tokens": 0,
+          "text": "Hauptstadt Deutschlands ist Berlin ."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "source": "China is a country in Asia .",
+      "target": "China ist ein Land in Asien .",
+      "hypothesis": "China ist ein asiatisches Land .",
+      "iterations": [
+        {
+          "iteration": 0,
+          "masked_tokens": 0,
+          "text": "China ist ein asiatiasiLand ."
+        },
+        {
+          "iteration": 1,
+          "masked_tokens": 8,
+          "text": "China ist ein asiatiasiLand ."
+        },
+        {
+          "iteration": 2,
+          "masked_tokens": 7,
+          "text": "China ist ein asiatisches Land ."
+        },
+        {
+          "iteration": 3,
+          "masked_tokens": 6,
+          "text": "China ist ein asiatisches Land ."
+        },
+        {
+          "iteration": 4,
+          "masked_tokens": 5,
+          "text": "China ist ein asiatisches Land ."
+        },
+        {
+          "iteration": 5,
+          "masked_tokens": 4,
+          "text": "China ist ein asiatisches Land ."
+        },
+        {
+          "iteration": 6,
+          "masked_tokens": 3,
+          "text": "China ist ein asiatisches Land ."
+        },
+        {
+          "iteration": 7,
+          "masked_tokens": 2,
+          "text": "China ist ein asiatisches Land ."
+        },
+        {
+          "iteration": 8,
+          "masked_tokens": 1,
+          "text": "China ist ein asiatisches Land ."
+        },
+        {
+          "iteration": 9,
+          "masked_tokens": 0,
+          "text": "China ist ein asiatisches Land ."
+        }
+      ]
+    }
+  ],
+  "bleu": 67.69160148952335,
+  "command": [
+    "/export/data/sfan/miniforge3/envs/maskpredict/bin/python",
+    "generate_cmlm.py",
+    "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/data-bin",
+    "--path",
+    "/export/data/sfan/mllm/Mask-Predict/checkpoints/maskPredict_en_de/checkpoint_best.pt",
+    "--task",
+    "translation_self",
+    "--source-lang",
+    "en",
+    "--target-lang",
+    "de",
+    "--remove-bpe",
+    "--max-sentences",
+    "20",
+    "--decoding-iterations",
+    "10",
+    "--decoding-strategy",
+    "mask_predict",
+    "--length-beam",
+    "5",
+    "--gen-subset",
+    "test"
+  ],
+  "trace_path": "/export/data/sfan/mllm/Mask-Predict/output/en_de_demo/test_iteration_trace.json"
+}
