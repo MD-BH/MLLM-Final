@@ -152,6 +152,25 @@ def _mask_tokens_for_iteration(
     return masked_tokens, mask_ind, selected_mask_token_ids, selected_mask_scores
 
 
+def _resolve_sentence_pair(
+    src_sentence: Optional[str] = None,
+    tgt_sentence: Optional[str] = None,
+    donor_sentence: Optional[str] = None,
+    base_sentence: Optional[str] = None,
+):
+    if src_sentence is not None and donor_sentence is not None and src_sentence != donor_sentence:
+        raise ValueError("src_sentence and donor_sentence both provided but do not match")
+    if tgt_sentence is not None and base_sentence is not None and tgt_sentence != base_sentence:
+        raise ValueError("tgt_sentence and base_sentence both provided but do not match")
+
+    resolved_src_sentence = src_sentence if src_sentence is not None else donor_sentence
+    resolved_tgt_sentence = tgt_sentence if tgt_sentence is not None else base_sentence
+    if resolved_src_sentence is None or resolved_tgt_sentence is None:
+        raise ValueError("Both source/target sentences must be provided")
+
+    return resolved_src_sentence, resolved_tgt_sentence
+
+
 def load_mask_predict_context(
     data_bin_dir: Path,
     model_dir: Path = DEFAULT_MODEL_DIR,
@@ -318,13 +337,23 @@ def _run_decoder_forward(
 
 
 def run_decoder_patching_experiment(
-    src_sentence: str,
-    tgt_sentence: str,
-    context: Dict[str, object],
-    layer_index: int,
+    src_sentence: Optional[str] = None,
+    tgt_sentence: Optional[str] = None,
+    context: Optional[Dict[str, object]] = None,
+    layer_index: Optional[int] = None,
     token_position: Optional[int] = None,
     decoding_iterations: int = 5,
+    donor_sentence: Optional[str] = None,
+    base_sentence: Optional[str] = None,
 ) -> Dict[str, object]:
+    if context is None or layer_index is None:
+        raise ValueError("context and layer_index are required")
+    src_sentence, tgt_sentence = _resolve_sentence_pair(
+        src_sentence=src_sentence,
+        tgt_sentence=tgt_sentence,
+        donor_sentence=donor_sentence,
+        base_sentence=base_sentence,
+    )
     task = context["task"]
     model = context["model"]
     device = context["device"]
@@ -374,12 +403,16 @@ def run_decoder_patching_experiment(
             {
                 "iteration": 0,
                 "src_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                "donor_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
                 "patched_text": _stringify_tokens(tgt_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
                 "patch_mode": "full_layer",
                 "activation_shape": list(tgt_capture["after_patch"].shape),
                 "src_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
+                "donor_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
                 "tgt_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
+                "base_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
                 "tgt_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
+                "base_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
             }
         )
 
@@ -437,19 +470,25 @@ def run_decoder_patching_experiment(
                 {
                     "iteration": int(counter),
                     "src_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                    "donor_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
                     "patched_text": _stringify_tokens(tgt_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
                     "patch_mode": "full_layer",
                     "activation_shape": list(tgt_capture["after_patch"].shape),
                     "src_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
+                    "donor_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
                     "tgt_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
+                    "base_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
                     "tgt_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
+                    "base_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
                 }
             )
 
     final_token_ids = tgt_tgt_tokens[0].detach().cpu()
     return {
         "src_sentence": src_sentence,
+        "donor_sentence": src_sentence,
         "tgt_sentence": tgt_sentence,
+        "base_sentence": tgt_sentence,
         "layer_index": layer_index,
         "token_position": token_position,
         "patch_mode": "full_layer",
@@ -464,13 +503,23 @@ def run_decoder_patching_experiment(
 
 
 def run_decoder_layer_sweep_experiment(
-    src_sentence: str,
-    tgt_sentence: str,
-    context: Dict[str, object],
-    tracked_token_position: int,
+    src_sentence: Optional[str] = None,
+    tgt_sentence: Optional[str] = None,
+    context: Optional[Dict[str, object]] = None,
+    tracked_token_position: int = 0,
     decoding_iterations: int = 5,
     layer_indices: Optional[List[int]] = None,
+    donor_sentence: Optional[str] = None,
+    base_sentence: Optional[str] = None,
 ) -> Dict[str, object]:
+    if context is None:
+        raise ValueError("context is required")
+    src_sentence, tgt_sentence = _resolve_sentence_pair(
+        src_sentence=src_sentence,
+        tgt_sentence=tgt_sentence,
+        donor_sentence=donor_sentence,
+        base_sentence=base_sentence,
+    )
     model = context["model"]
     tgt_dict = context["task"].target_dictionary
     decoder_layers = model.decoder.layers
@@ -520,7 +569,9 @@ def run_decoder_layer_sweep_experiment(
 
     return {
         "src_sentence": src_sentence,
+        "donor_sentence": src_sentence,
         "tgt_sentence": tgt_sentence,
+        "base_sentence": tgt_sentence,
         "patch_mode": "full_layer",
         "tracked_token_position": tracked_token_position,
         "tracked_token_label": tracked_token_label,
@@ -530,6 +581,224 @@ def run_decoder_layer_sweep_experiment(
         "iterations": [step["iteration"] for step in layer_results[0]["iteration_trace"]] if layer_results else [],
         "heatmap": heatmap,
         "layer_results": layer_results,
+    }
+
+
+def _run_decoder_self_attn_forward(
+    model,
+    tgt_tokens: torch.Tensor,
+    encoder_out: Dict[str, torch.Tensor],
+    layer_index: int,
+    token_position: int,
+    src_attn_token_state: Optional[torch.Tensor] = None,
+):
+    captured: Dict[str, torch.Tensor] = {}
+    decoder_layers = model.decoder.layers
+
+    if layer_index < 0 or layer_index >= len(decoder_layers):
+        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
+    if token_position < 0 or token_position >= tgt_tokens.size(1):
+        raise IndexError(f"token_position {token_position} out of range for decoder length {tgt_tokens.size(1)}")
+
+    layer = decoder_layers[layer_index]
+
+    def hook(_module, _inputs, output):
+        hidden, attn = output
+        captured["before_patch"] = hidden[token_position, 0, :].detach().cpu().clone()
+        patched_hidden = hidden
+        if src_attn_token_state is not None:
+            src_state = src_attn_token_state.to(hidden.device, dtype=hidden.dtype)
+            if src_state.shape != hidden[token_position, 0, :].shape:
+                raise ValueError(
+                    "self-attn token patching requires donor and target token activations to have the same shape, "
+                    f"got {tuple(src_state.shape)} and {tuple(hidden[token_position, 0, :].shape)}"
+                )
+            patched_hidden = hidden.clone()
+            patched_hidden[token_position, 0, :] = src_state
+        captured["after_patch"] = patched_hidden[token_position, 0, :].detach().cpu().clone()
+        return patched_hidden, attn
+
+    handle = layer.self_attn.register_forward_hook(hook)
+    try:
+        decoder_out = model.decoder(tgt_tokens, encoder_out)
+    finally:
+        handle.remove()
+
+    return decoder_out, captured
+
+
+def run_decoder_self_attn_token_patching_experiment(
+    src_sentence: Optional[str] = None,
+    tgt_sentence: Optional[str] = None,
+    context: Optional[Dict[str, object]] = None,
+    layer_index: Optional[int] = None,
+    token_position: Optional[int] = None,
+    decoding_iterations: int = 5,
+    donor_sentence: Optional[str] = None,
+    base_sentence: Optional[str] = None,
+) -> Dict[str, object]:
+    if context is None or layer_index is None or token_position is None:
+        raise ValueError("context, layer_index, and token_position are required")
+    src_sentence, tgt_sentence = _resolve_sentence_pair(
+        src_sentence=src_sentence,
+        tgt_sentence=tgt_sentence,
+        donor_sentence=donor_sentence,
+        base_sentence=base_sentence,
+    )
+
+    task = context["task"]
+    model = context["model"]
+    device = context["device"]
+    args = context["args"]
+    tgt_dict = task.target_dictionary
+
+    src_encoder = get_encoder_output(src_sentence, context)
+    tgt_encoder = get_encoder_output(tgt_sentence, context)
+    src_encoder_out = _move_encoder_out_to_device(clone_encoder_out(src_encoder["encoder_out"]), device)
+    tgt_encoder_out = _move_encoder_out_to_device(clone_encoder_out(tgt_encoder["encoder_out"]), device)
+
+    src_length = _predicted_length(src_encoder_out)
+    tgt_length = _predicted_length(tgt_encoder_out)
+    if token_position >= src_length or token_position >= tgt_length:
+        raise IndexError(
+            f"token_position {token_position} out of range for source/target decoder lengths {src_length} and {tgt_length}"
+        )
+
+    iterations = tgt_length if decoding_iterations is None else decoding_iterations
+    src_tgt_tokens = torch.full((1, src_length), tgt_dict.mask(), dtype=torch.long, device=device)
+    tgt_tgt_tokens = torch.full((1, tgt_length), tgt_dict.mask(), dtype=torch.long, device=device)
+
+    iteration_trace: List[Dict[str, object]] = []
+    patch_trace: List[Dict[str, object]] = []
+
+    with torch.no_grad():
+        src_decoder_out, src_capture = _run_decoder_self_attn_forward(
+            model,
+            src_tgt_tokens,
+            src_encoder_out,
+            layer_index,
+            token_position,
+        )
+        src_tgt_tokens, src_token_probs, _ = generate_step_with_prob(src_decoder_out)
+
+        patched_decoder_out, tgt_capture = _run_decoder_self_attn_forward(
+            model,
+            tgt_tgt_tokens,
+            tgt_encoder_out,
+            layer_index,
+            token_position,
+            src_attn_token_state=src_capture["after_patch"],
+        )
+        tgt_tgt_tokens, tgt_token_probs, _ = generate_step_with_prob(patched_decoder_out)
+
+        _record_iteration(iteration_trace, 0, tgt_tgt_tokens, tgt_token_probs, tgt_dict, args.remove_bpe)
+        patch_trace.append(
+            {
+                "iteration": 0,
+                "src_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                "donor_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                "patched_text": _stringify_tokens(tgt_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                "patch_mode": "self_attn_token",
+                "module_name": f"decoder.layers.{layer_index}.self_attn",
+                "token_position": token_position,
+                "activation_shape": list(tgt_capture["after_patch"].shape),
+                "src_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
+                "donor_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
+                "tgt_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
+                "base_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
+                "tgt_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
+                "base_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
+            }
+        )
+
+        for counter in range(1, iterations):
+            src_masked_tokens, src_mask_ind, _, _ = _mask_tokens_for_iteration(
+                src_tgt_tokens,
+                src_token_probs,
+                tgt_dict,
+                counter,
+                iterations,
+            )
+            src_decoder_out, src_capture = _run_decoder_self_attn_forward(
+                model,
+                src_masked_tokens,
+                src_encoder_out,
+                layer_index,
+                token_position,
+            )
+            src_new_tgt_tokens, src_new_token_probs, _ = generate_step_with_prob(src_decoder_out)
+            src_tgt_tokens = src_masked_tokens
+            src_token_probs = src_token_probs.clone()
+            src_tgt_tokens[0, src_mask_ind] = src_new_tgt_tokens[0, src_mask_ind]
+            src_token_probs[0, src_mask_ind] = src_new_token_probs[0, src_mask_ind]
+
+            tgt_masked_tokens, tgt_mask_ind, selected_mask_token_ids, selected_mask_scores = _mask_tokens_for_iteration(
+                tgt_tgt_tokens,
+                tgt_token_probs,
+                tgt_dict,
+                counter,
+                iterations,
+            )
+            patched_decoder_out, tgt_capture = _run_decoder_self_attn_forward(
+                model,
+                tgt_masked_tokens,
+                tgt_encoder_out,
+                layer_index,
+                token_position,
+                src_attn_token_state=src_capture["after_patch"],
+            )
+            tgt_new_tgt_tokens, tgt_new_token_probs, _ = generate_step_with_prob(patched_decoder_out)
+            tgt_tgt_tokens = tgt_masked_tokens
+            tgt_token_probs = tgt_token_probs.clone()
+            tgt_tgt_tokens[0, tgt_mask_ind] = tgt_new_tgt_tokens[0, tgt_mask_ind]
+            tgt_token_probs[0, tgt_mask_ind] = tgt_new_token_probs[0, tgt_mask_ind]
+
+            _record_iteration(
+                iteration_trace,
+                counter,
+                tgt_tgt_tokens,
+                tgt_token_probs,
+                tgt_dict,
+                args.remove_bpe,
+                selected_mask_token_ids=selected_mask_token_ids,
+                selected_mask_scores=selected_mask_scores,
+            )
+            patch_trace.append(
+                {
+                    "iteration": int(counter),
+                    "src_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                    "donor_text": _stringify_tokens(src_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                    "patched_text": _stringify_tokens(tgt_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                    "patch_mode": "self_attn_token",
+                    "module_name": f"decoder.layers.{layer_index}.self_attn",
+                    "token_position": token_position,
+                    "activation_shape": list(tgt_capture["after_patch"].shape),
+                    "src_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
+                    "donor_activation_norm": round(float(src_capture["after_patch"].norm().item()), 6),
+                    "tgt_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
+                    "base_activation_norm_before_patch": round(float(tgt_capture["before_patch"].norm().item()), 6),
+                    "tgt_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
+                    "base_activation_norm_after_patch": round(float(tgt_capture["after_patch"].norm().item()), 6),
+                }
+            )
+
+    final_token_ids = tgt_tgt_tokens[0].detach().cpu()
+    return {
+        "src_sentence": src_sentence,
+        "donor_sentence": src_sentence,
+        "tgt_sentence": tgt_sentence,
+        "base_sentence": tgt_sentence,
+        "layer_index": layer_index,
+        "token_position": token_position,
+        "patch_mode": "self_attn_token",
+        "module_name": f"decoder.layers.{layer_index}.self_attn",
+        "src_encoder": src_encoder,
+        "tgt_encoder": tgt_encoder,
+        "decoded_text": _stringify_tokens(final_token_ids, tgt_dict, args.remove_bpe),
+        "token_ids": final_token_ids.tolist(),
+        "iteration_trace": iteration_trace,
+        "patch_trace": patch_trace,
+        "predicted_length": tgt_length,
     }
 
 
