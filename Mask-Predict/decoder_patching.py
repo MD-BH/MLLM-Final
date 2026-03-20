@@ -150,7 +150,7 @@ def load_mask_predict_context(
     source_lang: str = "en",
     target_lang: str = "de",
     decoding_iterations: int = 5,
-    length_beam: int = 5,
+    length_beam: int = 1,
     max_sentences: int = 20,
     use_cpu: bool = True,
 ) -> Dict[str, object]:
@@ -275,7 +275,6 @@ def _run_decoder_forward(
     tgt_tokens: torch.Tensor,
     encoder_out: Dict[str, torch.Tensor],
     layer_index: int,
-    token_position: int,
     donor_hidden_state: Optional[torch.Tensor] = None,
 ):
     captured: Dict[str, torch.Tensor] = {}
@@ -283,19 +282,22 @@ def _run_decoder_forward(
 
     if layer_index < 0 or layer_index >= len(decoder_layers):
         raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
-    if token_position < 0 or token_position >= tgt_tokens.size(1):
-        raise IndexError(f"token_position {token_position} out of range for decoder length {tgt_tokens.size(1)}")
 
     layer = decoder_layers[layer_index]
 
     def hook(_module, _inputs, output):
         hidden, attn = output
-        captured["before_patch"] = hidden[token_position, 0, :].detach().cpu().clone()
+        captured["before_patch"] = hidden.detach().cpu().clone()
         patched_hidden = hidden
         if donor_hidden_state is not None:
-            patched_hidden = hidden.clone()
-            patched_hidden[token_position, 0, :] = donor_hidden_state.to(hidden.device, dtype=hidden.dtype)
-        captured["after_patch"] = patched_hidden[token_position, 0, :].detach().cpu().clone()
+            donor_state = donor_hidden_state.to(hidden.device, dtype=hidden.dtype)
+            if donor_state.shape != hidden.shape:
+                raise ValueError(
+                    "full-layer patching requires donor and base decoder activations to have the same shape, "
+                    f"got {tuple(donor_state.shape)} and {tuple(hidden.shape)}"
+                )
+            patched_hidden = donor_state.clone()
+        captured["after_patch"] = patched_hidden.detach().cpu().clone()
         return patched_hidden, attn
 
     handle = layer.register_forward_hook(hook)
@@ -312,7 +314,7 @@ def run_decoder_patching_experiment(
     base_sentence: str,
     context: Dict[str, object],
     layer_index: int,
-    token_position: int,
+    token_position: Optional[int] = None,
     decoding_iterations: int = 5,
 ) -> Dict[str, object]:
     task = context["task"]
@@ -328,9 +330,10 @@ def run_decoder_patching_experiment(
 
     donor_length = _predicted_length(donor_encoder_out)
     base_length = _predicted_length(base_encoder_out)
-    if token_position >= donor_length or token_position >= base_length:
-        raise IndexError(
-            f"token_position {token_position} out of range for donor/base decoder lengths {donor_length} and {base_length}"
+    if donor_length != base_length:
+        raise ValueError(
+            "full-layer patching requires donor and base predicted target lengths to match, "
+            f"got {donor_length} and {base_length}"
         )
 
     iterations = base_length if decoding_iterations is None else decoding_iterations
@@ -346,7 +349,6 @@ def run_decoder_patching_experiment(
             donor_tgt_tokens,
             donor_encoder_out,
             layer_index,
-            token_position,
         )
         donor_tgt_tokens, donor_token_probs, _ = generate_step_with_prob(donor_decoder_out)
 
@@ -355,7 +357,6 @@ def run_decoder_patching_experiment(
             base_tgt_tokens,
             base_encoder_out,
             layer_index,
-            token_position,
             donor_hidden_state=donor_capture["after_patch"],
         )
         base_tgt_tokens, base_token_probs, _ = generate_step_with_prob(patched_decoder_out)
@@ -366,6 +367,8 @@ def run_decoder_patching_experiment(
                 "iteration": 0,
                 "donor_text": _stringify_tokens(donor_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
                 "patched_text": _stringify_tokens(base_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                "patch_mode": "full_layer",
+                "activation_shape": list(base_capture["after_patch"].shape),
                 "donor_activation_norm": round(float(donor_capture["after_patch"].norm().item()), 6),
                 "base_activation_norm_before_patch": round(float(base_capture["before_patch"].norm().item()), 6),
                 "base_activation_norm_after_patch": round(float(base_capture["after_patch"].norm().item()), 6),
@@ -385,7 +388,6 @@ def run_decoder_patching_experiment(
                 donor_masked_tokens,
                 donor_encoder_out,
                 layer_index,
-                token_position,
             )
             donor_new_tgt_tokens, donor_new_token_probs, _ = generate_step_with_prob(donor_decoder_out)
             donor_tgt_tokens = donor_masked_tokens
@@ -405,7 +407,6 @@ def run_decoder_patching_experiment(
                 base_masked_tokens,
                 base_encoder_out,
                 layer_index,
-                token_position,
                 donor_hidden_state=donor_capture["after_patch"],
             )
             base_new_tgt_tokens, base_new_token_probs, _ = generate_step_with_prob(patched_decoder_out)
@@ -429,6 +430,8 @@ def run_decoder_patching_experiment(
                     "iteration": int(counter),
                     "donor_text": _stringify_tokens(donor_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
                     "patched_text": _stringify_tokens(base_tgt_tokens[0].detach().cpu(), tgt_dict, args.remove_bpe),
+                    "patch_mode": "full_layer",
+                    "activation_shape": list(base_capture["after_patch"].shape),
                     "donor_activation_norm": round(float(donor_capture["after_patch"].norm().item()), 6),
                     "base_activation_norm_before_patch": round(float(base_capture["before_patch"].norm().item()), 6),
                     "base_activation_norm_after_patch": round(float(base_capture["after_patch"].norm().item()), 6),
@@ -441,6 +444,7 @@ def run_decoder_patching_experiment(
         "base_sentence": base_sentence,
         "layer_index": layer_index,
         "token_position": token_position,
+        "patch_mode": "full_layer",
         "donor_encoder": donor_encoder,
         "base_encoder": base_encoder,
         "decoded_text": _stringify_tokens(final_token_ids, tgt_dict, args.remove_bpe),
