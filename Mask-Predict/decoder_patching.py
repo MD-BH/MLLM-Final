@@ -185,29 +185,6 @@ def _resolve_sentence_pair(
     return resolved_source_sentence, resolved_target_sentence
 
 
-def _resolve_optional_source_sentence(
-    source_sentence: Optional[str] = None,
-    src_sentence: Optional[str] = None,
-):
-    return _resolve_text_alias(
-        "source_sentence",
-        source_sentence,
-        src_sentence,
-        required=False,
-    )
-
-
-def _resolve_target_sentence(
-    target_sentence: Optional[str] = None,
-    tgt_sentence: Optional[str] = None,
-):
-    return _resolve_text_alias(
-        "target_sentence",
-        target_sentence,
-        tgt_sentence,
-    )
-
-
 def _normalize_iteration_indices(
     iteration_indices: Optional[List[int]],
     total_iterations: int,
