@@ -1239,6 +1239,492 @@ def run_decoder_cross_attn_full_layer_iteration_sweep_experiment(
     )
 
 
+def _mean_token_mask_prob(iteration_step: Dict[str, object]) -> float:
+    token_mask_probs = iteration_step["token_mask_probs"]
+    return round(float(sum(token_mask_probs) / len(token_mask_probs)), 6)
+
+
+def _run_decoder_self_attn_head_zero_forward(
+    model,
+    tgt_tokens: torch.Tensor,
+    encoder_out: Dict[str, torch.Tensor],
+    layer_index: int,
+    head_index: int,
+):
+    captured: Dict[str, torch.Tensor] = {}
+    decoder_layers = model.decoder.layers
+
+    if layer_index < 0 or layer_index >= len(decoder_layers):
+        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
+
+    layer = decoder_layers[layer_index]
+    self_attn = layer.self_attn
+    num_heads = self_attn.num_heads
+    head_dim = self_attn.head_dim
+
+    if head_index < 0 or head_index >= num_heads:
+        raise IndexError(f"head_index {head_index} out of range for {num_heads} self-attn heads")
+
+    head_start = head_index * head_dim
+    head_end = head_start + head_dim
+
+    def hook(_module, inputs):
+        (attn_input,) = inputs
+        captured["before_zero"] = attn_input[..., head_start:head_end].detach().cpu().clone()
+        patched_input = attn_input.clone()
+        patched_input[..., head_start:head_end] = 0
+        captured["after_zero"] = patched_input[..., head_start:head_end].detach().cpu().clone()
+        return (patched_input,)
+
+    handle = self_attn.out_proj.register_forward_pre_hook(hook)
+    original_enable_torch_version = self_attn.enable_torch_version
+    self_attn.enable_torch_version = False
+    try:
+        decoder_out = model.decoder(tgt_tokens, encoder_out)
+    finally:
+        self_attn.enable_torch_version = original_enable_torch_version
+        handle.remove()
+
+    return decoder_out, captured
+
+
+def run_decoder_self_attn_head_zero_ablation_experiment(
+    target_sentence: Optional[str] = None,
+    context: Optional[Dict[str, object]] = None,
+    layer_index: Optional[int] = None,
+    head_index: Optional[int] = None,
+    decoding_iterations: int = 5,
+    tgt_sentence: Optional[str] = None,
+) -> Dict[str, object]:
+    if context is None or layer_index is None or head_index is None:
+        raise ValueError("context, layer_index, and head_index are required")
+
+    target_sentence = _resolve_text_alias(
+        "target_sentence",
+        target_sentence,
+        tgt_sentence,
+    )
+
+    task = context["task"]
+    model = context["model"]
+    device = context["device"]
+    args = context["args"]
+    tgt_dict = task.target_dictionary
+
+    target_encoder = get_encoder_output(target_sentence, context)
+    target_encoder_out = _move_encoder_out_to_device(clone_encoder_out(target_encoder["encoder_out"]), device)
+    target_length = _predicted_length(target_encoder_out)
+
+    iterations = target_length if decoding_iterations is None else decoding_iterations
+    target_tgt_tokens = torch.full((1, target_length), tgt_dict.mask(), dtype=torch.long, device=device)
+
+    reference_decode = decode_from_encoder_output(
+        target_encoder["encoder_out"],
+        context=context,
+        decoding_iterations=decoding_iterations,
+    )
+
+    iteration_trace: List[Dict[str, object]] = []
+    patch_trace: List[Dict[str, object]] = []
+
+    with torch.no_grad():
+        decoder_out, capture = _run_decoder_self_attn_head_zero_forward(
+            model,
+            target_tgt_tokens,
+            target_encoder_out,
+            layer_index,
+            head_index,
+        )
+        target_tgt_tokens, target_token_probs, _ = generate_step_with_prob(decoder_out)
+        _record_iteration(iteration_trace, 0, target_tgt_tokens, target_token_probs, tgt_dict, args.remove_bpe)
+        patch_trace.append(
+            {
+                "iteration": 0,
+                "patch_mode": "self_attn_head_zero_ablation",
+                "module_name": f"decoder.layers.{layer_index}.self_attn",
+                "head_index": head_index,
+                "head_output_shape": list(capture["after_zero"].shape),
+                "head_output_norm_before_zero": round(float(capture["before_zero"].norm().item()), 6),
+                "head_output_norm_after_zero": round(float(capture["after_zero"].norm().item()), 6),
+                "average_token_mask_prob": _mean_token_mask_prob(iteration_trace[-1]),
+            }
+        )
+
+        for counter in range(1, iterations):
+            target_masked_tokens, target_mask_ind, selected_mask_token_ids, selected_mask_scores = _mask_tokens_for_iteration(
+                target_tgt_tokens,
+                target_token_probs,
+                tgt_dict,
+                counter,
+                iterations,
+            )
+            decoder_out, capture = _run_decoder_self_attn_head_zero_forward(
+                model,
+                target_masked_tokens,
+                target_encoder_out,
+                layer_index,
+                head_index,
+            )
+            target_new_tgt_tokens, target_new_token_probs, _ = generate_step_with_prob(decoder_out)
+            target_tgt_tokens = target_masked_tokens
+            target_token_probs = target_token_probs.clone()
+            target_tgt_tokens[0, target_mask_ind] = target_new_tgt_tokens[0, target_mask_ind]
+            target_token_probs[0, target_mask_ind] = target_new_token_probs[0, target_mask_ind]
+
+            _record_iteration(
+                iteration_trace,
+                counter,
+                target_tgt_tokens,
+                target_token_probs,
+                tgt_dict,
+                args.remove_bpe,
+                selected_mask_token_ids=selected_mask_token_ids,
+                selected_mask_scores=selected_mask_scores,
+            )
+            patch_trace.append(
+                {
+                    "iteration": int(counter),
+                    "patch_mode": "self_attn_head_zero_ablation",
+                    "module_name": f"decoder.layers.{layer_index}.self_attn",
+                    "head_index": head_index,
+                    "head_output_shape": list(capture["after_zero"].shape),
+                    "head_output_norm_before_zero": round(float(capture["before_zero"].norm().item()), 6),
+                    "head_output_norm_after_zero": round(float(capture["after_zero"].norm().item()), 6),
+                    "average_token_mask_prob": _mean_token_mask_prob(iteration_trace[-1]),
+                }
+            )
+
+    average_token_mask_probs_by_iteration = [
+        _mean_token_mask_prob(iteration_step)
+        for iteration_step in iteration_trace
+    ]
+    overall_average_mask_prob = round(
+        float(sum(average_token_mask_probs_by_iteration) / len(average_token_mask_probs_by_iteration)),
+        6,
+    )
+    final_token_ids = target_tgt_tokens[0].detach().cpu()
+
+    return {
+        "target_sentence": target_sentence,
+        "layer_index": layer_index,
+        "head_index": head_index,
+        "patch_mode": "self_attn_head_zero_ablation",
+        "module_name": f"decoder.layers.{layer_index}.self_attn",
+        "target_encoder": target_encoder,
+        "reference_decoded_text": reference_decode["decoded_text"],
+        "reference_token_ids": reference_decode["token_ids"],
+        "decoded_text": _stringify_tokens(final_token_ids, tgt_dict, args.remove_bpe),
+        "token_ids": final_token_ids.tolist(),
+        "iteration_trace": iteration_trace,
+        "patch_trace": patch_trace,
+        "average_token_mask_probs_by_iteration": average_token_mask_probs_by_iteration,
+        "overall_average_mask_prob": overall_average_mask_prob,
+        "predicted_length": target_length,
+    }
+
+
+def run_decoder_self_attn_head_zero_ablation_sweep_experiment(
+    target_sentence: Optional[str] = None,
+    context: Optional[Dict[str, object]] = None,
+    layer_index: Optional[int] = None,
+    decoding_iterations: int = 5,
+    head_indices: Optional[List[int]] = None,
+    tgt_sentence: Optional[str] = None,
+) -> Dict[str, object]:
+    if context is None or layer_index is None:
+        raise ValueError("context and layer_index are required")
+
+    target_sentence = _resolve_text_alias(
+        "target_sentence",
+        target_sentence,
+        tgt_sentence,
+    )
+
+    model = context["model"]
+    decoder_layers = model.decoder.layers
+    if layer_index < 0 or layer_index >= len(decoder_layers):
+        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
+
+    num_heads = decoder_layers[layer_index].self_attn.num_heads
+    if head_indices is None:
+        head_indices = list(range(num_heads))
+    else:
+        head_indices = [int(head_index) for head_index in head_indices]
+        for head_index in head_indices:
+            if head_index < 0 or head_index >= num_heads:
+                raise IndexError(f"head_index {head_index} out of range for {num_heads} self-attn heads")
+
+    head_results: List[Dict[str, object]] = []
+    heatmap: List[List[float]] = []
+
+    for head_index in head_indices:
+        head_result = run_decoder_self_attn_head_zero_ablation_experiment(
+            target_sentence=target_sentence,
+            context=context,
+            layer_index=layer_index,
+            head_index=head_index,
+            decoding_iterations=decoding_iterations,
+        )
+        head_results.append(head_result)
+        heatmap.append(head_result["average_token_mask_probs_by_iteration"])
+
+    return {
+        "target_sentence": target_sentence,
+        "layer_index": layer_index,
+        "patch_mode": "self_attn_head_zero_ablation",
+        "head_indices": head_indices,
+        "iterations": [step["iteration"] for step in head_results[0]["iteration_trace"]] if head_results else [],
+        "reference_decoded_text": head_results[0]["reference_decoded_text"] if head_results else "",
+        "reference_token_ids": head_results[0]["reference_token_ids"] if head_results else [],
+        "heatmap": heatmap,
+        "head_results": head_results,
+    }
+
+
+def _run_decoder_cross_attn_head_zero_forward(
+    model,
+    tgt_tokens: torch.Tensor,
+    encoder_out: Dict[str, torch.Tensor],
+    layer_index: int,
+    head_index: int,
+):
+    captured: Dict[str, torch.Tensor] = {}
+    decoder_layers = model.decoder.layers
+
+    if layer_index < 0 or layer_index >= len(decoder_layers):
+        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
+
+    layer = decoder_layers[layer_index]
+    encoder_attn = layer.encoder_attn
+    if encoder_attn is None:
+        raise ValueError(f"decoder layer {layer_index} does not have cross-attention")
+
+    num_heads = encoder_attn.num_heads
+    head_dim = encoder_attn.head_dim
+
+    if head_index < 0 or head_index >= num_heads:
+        raise IndexError(f"head_index {head_index} out of range for {num_heads} cross-attn heads")
+
+    head_start = head_index * head_dim
+    head_end = head_start + head_dim
+
+    def hook(_module, inputs):
+        (attn_input,) = inputs
+        captured["before_zero"] = attn_input[..., head_start:head_end].detach().cpu().clone()
+        patched_input = attn_input.clone()
+        patched_input[..., head_start:head_end] = 0
+        captured["after_zero"] = patched_input[..., head_start:head_end].detach().cpu().clone()
+        return (patched_input,)
+
+    handle = encoder_attn.out_proj.register_forward_pre_hook(hook)
+    original_enable_torch_version = encoder_attn.enable_torch_version
+    encoder_attn.enable_torch_version = False
+    try:
+        decoder_out = model.decoder(tgt_tokens, encoder_out)
+    finally:
+        encoder_attn.enable_torch_version = original_enable_torch_version
+        handle.remove()
+
+    return decoder_out, captured
+
+
+def run_decoder_cross_attn_head_zero_ablation_experiment(
+    target_sentence: Optional[str] = None,
+    context: Optional[Dict[str, object]] = None,
+    layer_index: Optional[int] = None,
+    head_index: Optional[int] = None,
+    decoding_iterations: int = 5,
+    tgt_sentence: Optional[str] = None,
+) -> Dict[str, object]:
+    if context is None or layer_index is None or head_index is None:
+        raise ValueError("context, layer_index, and head_index are required")
+
+    target_sentence = _resolve_text_alias(
+        "target_sentence",
+        target_sentence,
+        tgt_sentence,
+    )
+
+    task = context["task"]
+    model = context["model"]
+    device = context["device"]
+    args = context["args"]
+    tgt_dict = task.target_dictionary
+
+    target_encoder = get_encoder_output(target_sentence, context)
+    target_encoder_out = _move_encoder_out_to_device(clone_encoder_out(target_encoder["encoder_out"]), device)
+    target_length = _predicted_length(target_encoder_out)
+
+    iterations = target_length if decoding_iterations is None else decoding_iterations
+    target_tgt_tokens = torch.full((1, target_length), tgt_dict.mask(), dtype=torch.long, device=device)
+
+    reference_decode = decode_from_encoder_output(
+        target_encoder["encoder_out"],
+        context=context,
+        decoding_iterations=decoding_iterations,
+    )
+
+    iteration_trace: List[Dict[str, object]] = []
+    patch_trace: List[Dict[str, object]] = []
+
+    with torch.no_grad():
+        decoder_out, capture = _run_decoder_cross_attn_head_zero_forward(
+            model,
+            target_tgt_tokens,
+            target_encoder_out,
+            layer_index,
+            head_index,
+        )
+        target_tgt_tokens, target_token_probs, _ = generate_step_with_prob(decoder_out)
+        _record_iteration(iteration_trace, 0, target_tgt_tokens, target_token_probs, tgt_dict, args.remove_bpe)
+        patch_trace.append(
+            {
+                "iteration": 0,
+                "patch_mode": "cross_attn_head_zero_ablation",
+                "module_name": f"decoder.layers.{layer_index}.encoder_attn",
+                "head_index": head_index,
+                "head_output_shape": list(capture["after_zero"].shape),
+                "head_output_norm_before_zero": round(float(capture["before_zero"].norm().item()), 6),
+                "head_output_norm_after_zero": round(float(capture["after_zero"].norm().item()), 6),
+                "average_token_mask_prob": _mean_token_mask_prob(iteration_trace[-1]),
+            }
+        )
+
+        for counter in range(1, iterations):
+            target_masked_tokens, target_mask_ind, selected_mask_token_ids, selected_mask_scores = _mask_tokens_for_iteration(
+                target_tgt_tokens,
+                target_token_probs,
+                tgt_dict,
+                counter,
+                iterations,
+            )
+            decoder_out, capture = _run_decoder_cross_attn_head_zero_forward(
+                model,
+                target_masked_tokens,
+                target_encoder_out,
+                layer_index,
+                head_index,
+            )
+            target_new_tgt_tokens, target_new_token_probs, _ = generate_step_with_prob(decoder_out)
+            target_tgt_tokens = target_masked_tokens
+            target_token_probs = target_token_probs.clone()
+            target_tgt_tokens[0, target_mask_ind] = target_new_tgt_tokens[0, target_mask_ind]
+            target_token_probs[0, target_mask_ind] = target_new_token_probs[0, target_mask_ind]
+
+            _record_iteration(
+                iteration_trace,
+                counter,
+                target_tgt_tokens,
+                target_token_probs,
+                tgt_dict,
+                args.remove_bpe,
+                selected_mask_token_ids=selected_mask_token_ids,
+                selected_mask_scores=selected_mask_scores,
+            )
+            patch_trace.append(
+                {
+                    "iteration": int(counter),
+                    "patch_mode": "cross_attn_head_zero_ablation",
+                    "module_name": f"decoder.layers.{layer_index}.encoder_attn",
+                    "head_index": head_index,
+                    "head_output_shape": list(capture["after_zero"].shape),
+                    "head_output_norm_before_zero": round(float(capture["before_zero"].norm().item()), 6),
+                    "head_output_norm_after_zero": round(float(capture["after_zero"].norm().item()), 6),
+                    "average_token_mask_prob": _mean_token_mask_prob(iteration_trace[-1]),
+                }
+            )
+
+    average_token_mask_probs_by_iteration = [
+        _mean_token_mask_prob(iteration_step)
+        for iteration_step in iteration_trace
+    ]
+    overall_average_mask_prob = round(
+        float(sum(average_token_mask_probs_by_iteration) / len(average_token_mask_probs_by_iteration)),
+        6,
+    )
+    final_token_ids = target_tgt_tokens[0].detach().cpu()
+
+    return {
+        "target_sentence": target_sentence,
+        "layer_index": layer_index,
+        "head_index": head_index,
+        "patch_mode": "cross_attn_head_zero_ablation",
+        "module_name": f"decoder.layers.{layer_index}.encoder_attn",
+        "target_encoder": target_encoder,
+        "reference_decoded_text": reference_decode["decoded_text"],
+        "reference_token_ids": reference_decode["token_ids"],
+        "decoded_text": _stringify_tokens(final_token_ids, tgt_dict, args.remove_bpe),
+        "token_ids": final_token_ids.tolist(),
+        "iteration_trace": iteration_trace,
+        "patch_trace": patch_trace,
+        "average_token_mask_probs_by_iteration": average_token_mask_probs_by_iteration,
+        "overall_average_mask_prob": overall_average_mask_prob,
+        "predicted_length": target_length,
+    }
+
+
+def run_decoder_cross_attn_head_zero_ablation_sweep_experiment(
+    target_sentence: Optional[str] = None,
+    context: Optional[Dict[str, object]] = None,
+    layer_index: Optional[int] = None,
+    decoding_iterations: int = 5,
+    head_indices: Optional[List[int]] = None,
+    tgt_sentence: Optional[str] = None,
+) -> Dict[str, object]:
+    if context is None or layer_index is None:
+        raise ValueError("context and layer_index are required")
+
+    target_sentence = _resolve_text_alias(
+        "target_sentence",
+        target_sentence,
+        tgt_sentence,
+    )
+
+    model = context["model"]
+    decoder_layers = model.decoder.layers
+    if layer_index < 0 or layer_index >= len(decoder_layers):
+        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
+
+    encoder_attn = decoder_layers[layer_index].encoder_attn
+    if encoder_attn is None:
+        raise ValueError(f"decoder layer {layer_index} does not have cross-attention")
+
+    num_heads = encoder_attn.num_heads
+    if head_indices is None:
+        head_indices = list(range(num_heads))
+    else:
+        head_indices = [int(head_index) for head_index in head_indices]
+        for head_index in head_indices:
+            if head_index < 0 or head_index >= num_heads:
+                raise IndexError(f"head_index {head_index} out of range for {num_heads} cross-attn heads")
+
+    head_results: List[Dict[str, object]] = []
+    heatmap: List[List[float]] = []
+
+    for head_index in head_indices:
+        head_result = run_decoder_cross_attn_head_zero_ablation_experiment(
+            target_sentence=target_sentence,
+            context=context,
+            layer_index=layer_index,
+            head_index=head_index,
+            decoding_iterations=decoding_iterations,
+        )
+        head_results.append(head_result)
+        heatmap.append(head_result["average_token_mask_probs_by_iteration"])
+
+    return {
+        "target_sentence": target_sentence,
+        "layer_index": layer_index,
+        "patch_mode": "cross_attn_head_zero_ablation",
+        "head_indices": head_indices,
+        "iterations": [step["iteration"] for step in head_results[0]["iteration_trace"]] if head_results else [],
+        "reference_decoded_text": head_results[0]["reference_decoded_text"] if head_results else "",
+        "reference_token_ids": head_results[0]["reference_token_ids"] if head_results else [],
+        "heatmap": heatmap,
+        "head_results": head_results,
+    }
+
+
 def plot_token_mask_probs(
     decode_result: Dict[str, object],
     dictionary_path: Path = DEFAULT_MODEL_DIR / "dict.de.txt",
@@ -1419,6 +1905,60 @@ def plot_cross_attn_full_layer_iteration_heatmap(
     plt.title(
         "Cross-Attn Full-Layer Patch Heatmap for "
         f"tracked token pos {tracked_token_position}: {tracked_token_label}"
+    )
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_self_attn_head_zero_ablation_heatmap(
+    sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    heatmap = sweep_result["heatmap"]
+    if not heatmap:
+        raise ValueError("sweep_result['heatmap'] is empty")
+
+    head_indices = sweep_result["head_indices"]
+    iterations = sweep_result["iterations"]
+    layer_index = sweep_result["layer_index"]
+
+    plt.figure(figsize=figsize)
+    image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=np.percentile(heatmap, 1), vmax=np.percentile(heatmap, 99))
+    plt.colorbar(image, label="Average Token Mask Probability")
+    plt.xticks(range(len(iterations)), iterations)
+    plt.yticks(range(len(head_indices)), head_indices)
+    plt.xlabel("Decoding Iteration")
+    plt.ylabel("Self-Attn Head")
+    plt.title(
+        f"Self-Attn Head Zero Ablation Heatmap for decoder layer {layer_index}"
+    )
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_cross_attn_head_zero_ablation_heatmap(
+    sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    heatmap = sweep_result["heatmap"]
+    if not heatmap:
+        raise ValueError("sweep_result['heatmap'] is empty")
+
+    head_indices = sweep_result["head_indices"]
+    iterations = sweep_result["iterations"]
+    layer_index = sweep_result["layer_index"]
+
+    plt.figure(figsize=figsize)
+    image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=np.percentile(heatmap, 1), vmax=np.percentile(heatmap, 99))
+    plt.colorbar(image, label="Average Token Mask Probability")
+    plt.xticks(range(len(iterations)), iterations)
+    plt.yticks(range(len(head_indices)), head_indices)
+    plt.xlabel("Decoding Iteration")
+    plt.ylabel("Cross-Attn Head")
+    plt.title(
+        f"Cross-Attn Head Zero Ablation Heatmap for decoder layer {layer_index}"
     )
     plt.tight_layout()
     plt.show()
