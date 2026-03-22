@@ -368,7 +368,7 @@ def _run_decoder_forward(
     return decoder_out, captured
 
 
-def run_decoder_patching_experiment(
+def decoder_patching(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -524,7 +524,7 @@ def run_decoder_patching_experiment(
     }
 
 
-def run_decoder_layer_sweep_experiment(
+def decoder_layer_sweep(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -567,7 +567,7 @@ def run_decoder_layer_sweep_experiment(
     heatmap: List[List[float]] = []
 
     for layer_index in layer_indices:
-        layer_result = run_decoder_patching_experiment(
+        layer_result = decoder_patching(
             source_sentence=source_sentence,
             target_sentence=target_sentence,
             context=context,
@@ -706,7 +706,7 @@ def _run_decoder_attention_patch_forward(
     return decoder_out, captured
 
 
-def run_decoder_attention_patching_experiment(
+def decoder_attention_patching(
     attention_type: str,
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
@@ -899,7 +899,7 @@ def run_decoder_attention_patching_experiment(
     return result
 
 
-def run_decoder_attention_layer_iteration_sweep_experiment(
+def decoder_attention_layer_iteration_sweep(
     attention_type: str,
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
@@ -968,7 +968,7 @@ def run_decoder_attention_layer_iteration_sweep_experiment(
         decoded_texts: List[str] = []
 
         for patch_iteration in patch_iteration_list:
-            patch_result = run_decoder_attention_patching_experiment(
+            patch_result = decoder_attention_patching(
                 attention_type=attention_type,
                 source_sentence=source_sentence,
                 target_sentence=target_sentence,
@@ -1028,7 +1028,7 @@ def run_decoder_attention_layer_iteration_sweep_experiment(
     return result
 
 
-def run_decoder_self_attn_token_patching_experiment(
+def decoder_self_attn_token_patching(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1041,7 +1041,7 @@ def run_decoder_self_attn_token_patching_experiment(
 ) -> Dict[str, object]:
     if token_position is None:
         raise ValueError("context, layer_index, and token_position are required")
-    return run_decoder_attention_patching_experiment(
+    return decoder_attention_patching(
         attention_type="self",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1055,7 +1055,7 @@ def run_decoder_self_attn_token_patching_experiment(
     )
 
 
-def run_decoder_self_attn_full_layer_patching_experiment(
+def decoder_self_attn_full_layer_patching(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1065,7 +1065,7 @@ def run_decoder_self_attn_full_layer_patching_experiment(
     src_sentence: Optional[str] = None,
     tgt_sentence: Optional[str] = None,
 ) -> Dict[str, object]:
-    return run_decoder_attention_patching_experiment(
+    return decoder_attention_patching(
         attention_type="self",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1079,7 +1079,7 @@ def run_decoder_self_attn_full_layer_patching_experiment(
     )
 
 
-def run_decoder_cross_attn_token_patching_experiment(
+def decoder_cross_attn_token_patching(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1092,7 +1092,7 @@ def run_decoder_cross_attn_token_patching_experiment(
 ) -> Dict[str, object]:
     if token_position is None:
         raise ValueError("context, layer_index, and token_position are required")
-    return run_decoder_attention_patching_experiment(
+    return decoder_attention_patching(
         attention_type="cross",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1106,7 +1106,7 @@ def run_decoder_cross_attn_token_patching_experiment(
     )
 
 
-def run_decoder_cross_attn_full_layer_patching_experiment(
+def decoder_cross_attn_full_layer_patching(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1116,7 +1116,7 @@ def run_decoder_cross_attn_full_layer_patching_experiment(
     src_sentence: Optional[str] = None,
     tgt_sentence: Optional[str] = None,
 ) -> Dict[str, object]:
-    return run_decoder_attention_patching_experiment(
+    return decoder_attention_patching(
         attention_type="cross",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1130,7 +1130,7 @@ def run_decoder_cross_attn_full_layer_patching_experiment(
     )
 
 
-def run_decoder_self_attn_layer_iteration_sweep_experiment(
+def decoder_self_attn_layer_iteration_sweep(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1144,7 +1144,7 @@ def run_decoder_self_attn_layer_iteration_sweep_experiment(
 ) -> Dict[str, object]:
     if patch_token_position is None:
         patch_token_position = tracked_token_position
-    return run_decoder_attention_layer_iteration_sweep_experiment(
+    return decoder_attention_layer_iteration_sweep(
         attention_type="self",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1159,7 +1159,7 @@ def run_decoder_self_attn_layer_iteration_sweep_experiment(
     )
 
 
-def run_decoder_self_attn_full_layer_iteration_sweep_experiment(
+def decoder_self_attn_full_layer_iteration_sweep(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1170,7 +1170,7 @@ def run_decoder_self_attn_full_layer_iteration_sweep_experiment(
     src_sentence: Optional[str] = None,
     tgt_sentence: Optional[str] = None,
 ) -> Dict[str, object]:
-    return run_decoder_attention_layer_iteration_sweep_experiment(
+    return decoder_attention_layer_iteration_sweep(
         attention_type="self",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1185,7 +1185,7 @@ def run_decoder_self_attn_full_layer_iteration_sweep_experiment(
     )
 
 
-def run_decoder_cross_attn_layer_iteration_sweep_experiment(
+def decoder_cross_attn_layer_iteration_sweep(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1199,7 +1199,7 @@ def run_decoder_cross_attn_layer_iteration_sweep_experiment(
 ) -> Dict[str, object]:
     if patch_token_position is None:
         patch_token_position = tracked_token_position
-    return run_decoder_attention_layer_iteration_sweep_experiment(
+    return decoder_attention_layer_iteration_sweep(
         attention_type="cross",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1214,7 +1214,7 @@ def run_decoder_cross_attn_layer_iteration_sweep_experiment(
     )
 
 
-def run_decoder_cross_attn_full_layer_iteration_sweep_experiment(
+def decoder_cross_attn_full_layer_iteration_sweep(
     source_sentence: Optional[str] = None,
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
@@ -1225,7 +1225,7 @@ def run_decoder_cross_attn_full_layer_iteration_sweep_experiment(
     src_sentence: Optional[str] = None,
     tgt_sentence: Optional[str] = None,
 ) -> Dict[str, object]:
-    return run_decoder_attention_layer_iteration_sweep_experiment(
+    return decoder_attention_layer_iteration_sweep(
         attention_type="cross",
         source_sentence=source_sentence,
         target_sentence=target_sentence,
@@ -1289,7 +1289,7 @@ def _run_decoder_self_attn_head_zero_forward(
     return decoder_out, captured
 
 
-def run_decoder_self_attn_head_zero_ablation_experiment(
+def decoder_self_attn_head_zero_ablation(
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
     layer_index: Optional[int] = None,
@@ -1424,7 +1424,7 @@ def run_decoder_self_attn_head_zero_ablation_experiment(
     }
 
 
-def run_decoder_self_attn_head_zero_ablation_sweep_experiment(
+def decoder_self_attn_head_zero_ablation_sweep(
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
     layer_index: Optional[int] = None,
@@ -1459,7 +1459,7 @@ def run_decoder_self_attn_head_zero_ablation_sweep_experiment(
     heatmap: List[List[float]] = []
 
     for head_index in head_indices:
-        head_result = run_decoder_self_attn_head_zero_ablation_experiment(
+        head_result = decoder_self_attn_head_zero_ablation(
             target_sentence=target_sentence,
             context=context,
             layer_index=layer_index,
@@ -1529,7 +1529,7 @@ def _run_decoder_cross_attn_head_zero_forward(
     return decoder_out, captured
 
 
-def run_decoder_cross_attn_head_zero_ablation_experiment(
+def decoder_cross_attn_head_zero_ablation(
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
     layer_index: Optional[int] = None,
@@ -1664,7 +1664,7 @@ def run_decoder_cross_attn_head_zero_ablation_experiment(
     }
 
 
-def run_decoder_cross_attn_head_zero_ablation_sweep_experiment(
+def decoder_cross_attn_head_zero_ablation_sweep(
     target_sentence: Optional[str] = None,
     context: Optional[Dict[str, object]] = None,
     layer_index: Optional[int] = None,
@@ -1703,7 +1703,7 @@ def run_decoder_cross_attn_head_zero_ablation_sweep_experiment(
     heatmap: List[List[float]] = []
 
     for head_index in head_indices:
-        head_result = run_decoder_cross_attn_head_zero_ablation_experiment(
+        head_result = decoder_cross_attn_head_zero_ablation(
             target_sentence=target_sentence,
             context=context,
             layer_index=layer_index,
