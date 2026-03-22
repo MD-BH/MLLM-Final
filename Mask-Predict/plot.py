@@ -195,7 +195,7 @@ def plot_cross_attn_full_layer_iteration_heatmap(
     plt.show()
 
 
-def plot_self_attn_head_zero_ablation_heatmap(
+def plot_self_attn_zero_out_heatmap(
     sweep_result: Dict[str, object],
     figsize=(9, 4.5),
     cmap: str = "magma",
@@ -216,13 +216,13 @@ def plot_self_attn_head_zero_ablation_heatmap(
     plt.xlabel("Decoding Iteration")
     plt.ylabel("Self-Attn Head")
     plt.title(
-        f"Self-Attn Head Zero Ablation Heatmap for decoder layer {layer_index}"
+        f"Self-Attn Zero-Out Heatmap for decoder layer {layer_index}"
     )
     plt.tight_layout()
     plt.show()
 
 
-def plot_cross_attn_head_zero_ablation_heatmap(
+def plot_cross_attn_zero_out_heatmap(
     sweep_result: Dict[str, object],
     figsize=(9, 4.5),
     cmap: str = "magma",
@@ -243,7 +243,7 @@ def plot_cross_attn_head_zero_ablation_heatmap(
     plt.xlabel("Decoding Iteration")
     plt.ylabel("Cross-Attn Head")
     plt.title(
-        f"Cross-Attn Head Zero Ablation Heatmap for decoder layer {layer_index}"
+        f"Cross-Attn Zero-Out Heatmap for decoder layer {layer_index}"
     )
     plt.tight_layout()
     plt.show()
