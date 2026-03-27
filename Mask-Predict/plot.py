@@ -195,6 +195,38 @@ def plot_cross_attn_full_layer_iteration_heatmap(
     plt.show()
 
 
+def _plot_attention_zero_out_heatmap(
+    heatmap,
+    *,
+    head_indices,
+    iterations,
+    title: str,
+    ylabel: str,
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    if not heatmap:
+        raise ValueError("heatmap is empty")
+
+    plt.figure(figsize=figsize)
+    image = plt.imshow(
+        heatmap,
+        aspect="auto",
+        cmap=cmap,
+        origin="lower",
+        vmin=np.percentile(heatmap, 1),
+        vmax=np.percentile(heatmap, 99),
+    )
+    plt.colorbar(image, label="Average Token Mask Probability")
+    plt.xticks(range(len(iterations)), iterations)
+    plt.yticks(range(len(head_indices)), head_indices)
+    plt.xlabel("Decoding Iteration")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_self_attn_zero_out_heatmap(
     sweep_result: Dict[str, object],
     figsize=(9, 4.5),
@@ -208,18 +240,15 @@ def plot_self_attn_zero_out_heatmap(
     iterations = sweep_result["iterations"]
     layer_index = sweep_result["layer_index"]
 
-    plt.figure(figsize=figsize)
-    image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=np.percentile(heatmap, 1), vmax=np.percentile(heatmap, 99))
-    plt.colorbar(image, label="Average Token Mask Probability")
-    plt.xticks(range(len(iterations)), iterations)
-    plt.yticks(range(len(head_indices)), head_indices)
-    plt.xlabel("Decoding Iteration")
-    plt.ylabel("Self-Attn Head")
-    plt.title(
-        f"Self-Attn Zero-Out Heatmap for decoder layer {layer_index}"
+    _plot_attention_zero_out_heatmap(
+        heatmap,
+        head_indices=head_indices,
+        iterations=iterations,
+        title=f"Self-Attn Zero-Out Heatmap for decoder layer {layer_index}",
+        ylabel="Self-Attn Head",
+        figsize=figsize,
+        cmap=cmap,
     )
-    plt.tight_layout()
-    plt.show()
 
 
 def plot_cross_attn_zero_out_heatmap(
@@ -235,15 +264,78 @@ def plot_cross_attn_zero_out_heatmap(
     iterations = sweep_result["iterations"]
     layer_index = sweep_result["layer_index"]
 
-    plt.figure(figsize=figsize)
-    image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=np.percentile(heatmap, 1), vmax=np.percentile(heatmap, 99))
-    plt.colorbar(image, label="Average Token Mask Probability")
-    plt.xticks(range(len(iterations)), iterations)
-    plt.yticks(range(len(head_indices)), head_indices)
-    plt.xlabel("Decoding Iteration")
-    plt.ylabel("Cross-Attn Head")
-    plt.title(
-        f"Cross-Attn Zero-Out Heatmap for decoder layer {layer_index}"
+    _plot_attention_zero_out_heatmap(
+        heatmap,
+        head_indices=head_indices,
+        iterations=iterations,
+        title=f"Cross-Attn Zero-Out Heatmap for decoder layer {layer_index}",
+        ylabel="Cross-Attn Head",
+        figsize=figsize,
+        cmap=cmap,
     )
-    plt.tight_layout()
-    plt.show()
+
+
+def plot_self_attn_zero_out_layer_sweep_heatmaps(
+    layer_sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    for layer_result in layer_sweep_result["layer_results"]:
+        plot_self_attn_zero_out_heatmap(layer_result, figsize=figsize, cmap=cmap)
+
+
+def plot_cross_attn_zero_out_layer_sweep_heatmaps(
+    layer_sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    for layer_result in layer_sweep_result["layer_results"]:
+        plot_cross_attn_zero_out_heatmap(layer_result, figsize=figsize, cmap=cmap)
+
+
+def plot_self_attn_zero_out_average_heatmap(
+    layer_sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    heatmap = layer_sweep_result["average_heatmap"]
+    if not heatmap:
+        raise ValueError("layer_sweep_result['average_heatmap'] is empty")
+
+    _plot_attention_zero_out_heatmap(
+        heatmap,
+        head_indices=layer_sweep_result["head_indices"],
+        iterations=layer_sweep_result["iterations"],
+        title=(
+            "Self-Attn Zero-Out Heatmap Averaged Across "
+            f"{len(layer_sweep_result['average_layer_indices'])} Decoder Layers "
+            f"{layer_sweep_result['average_layer_indices']}"
+        ),
+        ylabel="Self-Attn Head",
+        figsize=figsize,
+        cmap=cmap,
+    )
+
+
+def plot_cross_attn_zero_out_average_heatmap(
+    layer_sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    heatmap = layer_sweep_result["average_heatmap"]
+    if not heatmap:
+        raise ValueError("layer_sweep_result['average_heatmap'] is empty")
+
+    _plot_attention_zero_out_heatmap(
+        heatmap,
+        head_indices=layer_sweep_result["head_indices"],
+        iterations=layer_sweep_result["iterations"],
+        title=(
+            "Cross-Attn Zero-Out Heatmap Averaged Across "
+            f"{len(layer_sweep_result['average_layer_indices'])} Decoder Layers "
+            f"{layer_sweep_result['average_layer_indices']}"
+        ),
+        ylabel="Cross-Attn Head",
+        figsize=figsize,
+        cmap=cmap,
+    )
