@@ -284,6 +284,7 @@ def _plot_attention_zero_out_layer_sweep_grid(
         vmax = vmin + 1e-6
 
     fig, axes = plt.subplots(2, 3, figsize=figsize)
+    fig.subplots_adjust(left=0.07, right=0.9, bottom=0.08, top=0.92, wspace=0.32, hspace=0.42)
     axes = axes.flatten()
     image = None
 
@@ -316,8 +317,8 @@ def _plot_attention_zero_out_layer_sweep_grid(
     for ax in axes[len(selected_layer_results) + 1:]:
         ax.axis("off")
 
-    fig.colorbar(image, ax=axes.tolist(), label="Average Token Mask Probability", shrink=0.9)
-    fig.tight_layout()
+    colorbar_ax = fig.add_axes([0.92, 0.14, 0.015, 0.68])
+    fig.colorbar(image, cax=colorbar_ax, label="Average Token Mask Probability")
     plt.show()
 
 
