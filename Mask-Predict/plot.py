@@ -73,8 +73,12 @@ def plot_layerwise_token_mask_heatmap(
     plt.show()
 
 
-def plot_self_attn_layer_iteration_heatmap(
+def _plot_attention_layer_iteration_heatmap(
     sweep_result: Dict[str, object],
+    *,
+    title_prefix: str,
+    colorbar_label: str,
+    include_patch_token_label: bool,
     figsize=(9, 4.5),
     cmap: str = "magma",
 ):
@@ -86,23 +90,40 @@ def plot_self_attn_layer_iteration_heatmap(
     patch_iterations = sweep_result["patch_iterations"]
     tracked_token_position = sweep_result["tracked_token_position"]
     tracked_token_label = sweep_result["tracked_token_label"]
-    patch_token_position = sweep_result["patch_token_position"]
-    patch_token_label = sweep_result["patch_token_label"]
 
     plt.figure(figsize=figsize)
     image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=0, vmax=0.2)
-    plt.colorbar(image, label="Mask Probability")
+    plt.colorbar(image, label=colorbar_label)
     plt.xticks(range(len(patch_iterations)), patch_iterations)
     plt.yticks(range(len(layer_indices)), layer_indices)
     plt.xlabel("Patched Decoding Iteration")
     plt.ylabel("Decoder Layer")
-    plt.title(
-        "Self-Attn Patch Heatmap for "
-        f"tracked token pos {tracked_token_position}: {tracked_token_label} "
-        f"(patch token pos {patch_token_position}: {patch_token_label})"
+    title = (
+        f"{title_prefix} for "
+        f"tracked token pos {tracked_token_position}: {tracked_token_label}"
     )
+    if include_patch_token_label:
+        patch_token_position = sweep_result["patch_token_position"]
+        patch_token_label = sweep_result["patch_token_label"]
+        title += f" (patch token pos {patch_token_position}: {patch_token_label})"
+    plt.title(title)
     plt.tight_layout()
     plt.show()
+
+
+def plot_self_attn_layer_iteration_heatmap(
+    sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    _plot_attention_layer_iteration_heatmap(
+        sweep_result,
+        title_prefix="Self-Attn Patch Heatmap",
+        colorbar_label="Mask Probability",
+        include_patch_token_label=True,
+        figsize=figsize,
+        cmap=cmap,
+    )
 
 
 def plot_cross_attn_layer_iteration_heatmap(
@@ -110,31 +131,14 @@ def plot_cross_attn_layer_iteration_heatmap(
     figsize=(9, 4.5),
     cmap: str = "magma",
 ):
-    heatmap = sweep_result["heatmap"]
-    if not heatmap:
-        raise ValueError("sweep_result['heatmap'] is empty")
-
-    layer_indices = sweep_result["layer_indices"]
-    patch_iterations = sweep_result["patch_iterations"]
-    tracked_token_position = sweep_result["tracked_token_position"]
-    tracked_token_label = sweep_result["tracked_token_label"]
-    patch_token_position = sweep_result["patch_token_position"]
-    patch_token_label = sweep_result["patch_token_label"]
-
-    plt.figure(figsize=figsize)
-    image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=0, vmax=0.2)
-    plt.colorbar(image, label="Mask Probability")
-    plt.xticks(range(len(patch_iterations)), patch_iterations)
-    plt.yticks(range(len(layer_indices)), layer_indices)
-    plt.xlabel("Patched Decoding Iteration")
-    plt.ylabel("Decoder Layer")
-    plt.title(
-        "Cross-Attn Patch Heatmap for "
-        f"tracked token pos {tracked_token_position}: {tracked_token_label} "
-        f"(patch token pos {patch_token_position}: {patch_token_label})"
+    _plot_attention_layer_iteration_heatmap(
+        sweep_result,
+        title_prefix="Cross-Attn Patch Heatmap",
+        colorbar_label="Mask Probability",
+        include_patch_token_label=True,
+        figsize=figsize,
+        cmap=cmap,
     )
-    plt.tight_layout()
-    plt.show()
 
 
 def plot_self_attn_full_layer_iteration_heatmap(
@@ -142,28 +146,14 @@ def plot_self_attn_full_layer_iteration_heatmap(
     figsize=(9, 4.5),
     cmap: str = "magma",
 ):
-    heatmap = sweep_result["heatmap"]
-    if not heatmap:
-        raise ValueError("sweep_result['heatmap'] is empty")
-
-    layer_indices = sweep_result["layer_indices"]
-    patch_iterations = sweep_result["patch_iterations"]
-    tracked_token_position = sweep_result["tracked_token_position"]
-    tracked_token_label = sweep_result["tracked_token_label"]
-
-    plt.figure(figsize=figsize)
-    image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=0, vmax=0.2)
-    plt.colorbar(image, label="Remask Probability")
-    plt.xticks(range(len(patch_iterations)), patch_iterations)
-    plt.yticks(range(len(layer_indices)), layer_indices)
-    plt.xlabel("Patched Decoding Iteration")
-    plt.ylabel("Decoder Layer")
-    plt.title(
-        "Self-Attn Full-Layer Patch Heatmap for "
-        f"tracked token pos {tracked_token_position}: {tracked_token_label}"
+    _plot_attention_layer_iteration_heatmap(
+        sweep_result,
+        title_prefix="Self-Attn Full-Layer Patch Heatmap",
+        colorbar_label="Remask Probability",
+        include_patch_token_label=False,
+        figsize=figsize,
+        cmap=cmap,
     )
-    plt.tight_layout()
-    plt.show()
 
 
 def plot_cross_attn_full_layer_iteration_heatmap(
@@ -171,28 +161,14 @@ def plot_cross_attn_full_layer_iteration_heatmap(
     figsize=(9, 4.5),
     cmap: str = "magma",
 ):
-    heatmap = sweep_result["heatmap"]
-    if not heatmap:
-        raise ValueError("sweep_result['heatmap'] is empty")
-
-    layer_indices = sweep_result["layer_indices"]
-    patch_iterations = sweep_result["patch_iterations"]
-    tracked_token_position = sweep_result["tracked_token_position"]
-    tracked_token_label = sweep_result["tracked_token_label"]
-
-    plt.figure(figsize=figsize)
-    image = plt.imshow(heatmap, aspect="auto", cmap=cmap, origin="lower", vmin=0, vmax=0.2)
-    plt.colorbar(image, label="Remask Probability")
-    plt.xticks(range(len(patch_iterations)), patch_iterations)
-    plt.yticks(range(len(layer_indices)), layer_indices)
-    plt.xlabel("Patched Decoding Iteration")
-    plt.ylabel("Decoder Layer")
-    plt.title(
-        "Cross-Attn Full-Layer Patch Heatmap for "
-        f"tracked token pos {tracked_token_position}: {tracked_token_label}"
+    _plot_attention_layer_iteration_heatmap(
+        sweep_result,
+        title_prefix="Cross-Attn Full-Layer Patch Heatmap",
+        colorbar_label="Remask Probability",
+        include_patch_token_label=False,
+        figsize=figsize,
+        cmap=cmap,
     )
-    plt.tight_layout()
-    plt.show()
 
 
 def _render_attention_zero_out_heatmap(
@@ -398,8 +374,11 @@ def plot_cross_attn_zero_out_layer_sweep_heatmaps(
     )
 
 
-def plot_self_attn_zero_out_average_heatmap(
+def _plot_attention_zero_out_average_heatmap(
     layer_sweep_result: Dict[str, object],
+    *,
+    attention_label: str,
+    ylabel: str,
     figsize=(9, 4.5),
     cmap: str = "magma",
 ):
@@ -412,10 +391,24 @@ def plot_self_attn_zero_out_average_heatmap(
         head_indices=layer_sweep_result["head_indices"],
         iterations=layer_sweep_result["iterations"],
         title=(
-            "Self-Attn Zero-Out Heatmap Averaged Across "
+            f"{attention_label} Heatmap Averaged Across "
             f"{len(layer_sweep_result['average_layer_indices'])} Decoder Layers "
             f"{layer_sweep_result['average_layer_indices']}"
         ),
+        ylabel=ylabel,
+        figsize=figsize,
+        cmap=cmap,
+    )
+
+
+def plot_self_attn_zero_out_average_heatmap(
+    layer_sweep_result: Dict[str, object],
+    figsize=(9, 4.5),
+    cmap: str = "magma",
+):
+    _plot_attention_zero_out_average_heatmap(
+        layer_sweep_result,
+        attention_label="Self-Attn Zero-Out",
         ylabel="Self-Attn Head",
         figsize=figsize,
         cmap=cmap,
@@ -427,19 +420,9 @@ def plot_cross_attn_zero_out_average_heatmap(
     figsize=(9, 4.5),
     cmap: str = "magma",
 ):
-    heatmap = layer_sweep_result["average_heatmap"]
-    if not heatmap:
-        raise ValueError("layer_sweep_result['average_heatmap'] is empty")
-
-    _plot_attention_zero_out_heatmap(
-        heatmap,
-        head_indices=layer_sweep_result["head_indices"],
-        iterations=layer_sweep_result["iterations"],
-        title=(
-            "Cross-Attn Zero-Out Heatmap Averaged Across "
-            f"{len(layer_sweep_result['average_layer_indices'])} Decoder Layers "
-            f"{layer_sweep_result['average_layer_indices']}"
-        ),
+    _plot_attention_zero_out_average_heatmap(
+        layer_sweep_result,
+        attention_label="Cross-Attn Zero-Out",
         ylabel="Cross-Attn Head",
         figsize=figsize,
         cmap=cmap,

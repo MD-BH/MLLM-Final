@@ -9,12 +9,9 @@ Translate pre-processed data with a trained model.
 """
 
 import torch
-import numpy as np
-import math
-import torch.nn.functional as F
 import re
 
-from fairseq import checkpoint_utils, pybleu, options, progress_bar, tasks, tokenizer, utils, strategies
+from fairseq import checkpoint_utils, pybleu, options, progress_bar, tasks, utils, strategies
 from fairseq.meters import TimeMeter
 from fairseq.strategies.strategy_utils import duplicate_encoder_out
 

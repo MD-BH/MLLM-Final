@@ -11,7 +11,6 @@ Train a new model on one or across multiple GPUs.
 
 import collections
 import math
-import os
 import random
 
 import torch
