@@ -209,6 +209,7 @@ def load_mask_predict_context(
     length_beam: int = 1,
     max_sentences: int = 20,
     use_cpu: bool = True,
+    gpu_device_id: int = 0,
 ) -> Dict[str, object]:
     from fairseq import checkpoint_utils, tasks
 
@@ -234,7 +235,12 @@ def load_mask_predict_context(
         )
 
     use_cuda = torch.cuda.is_available() and not args.cpu
-    device = torch.device("cuda" if use_cuda else "cpu")
+    if use_cuda:
+        gpu_device_id = int(gpu_device_id)
+        torch.cuda.set_device(gpu_device_id)
+        device = torch.device(f"cuda:{gpu_device_id}")
+    else:
+        device = torch.device("cpu")
     model = models[0].to(device)
     model.eval()
 
@@ -247,6 +253,7 @@ def load_mask_predict_context(
         "model_dir": model_dir,
         "source_lang": source_lang,
         "target_lang": target_lang,
+        "gpu_device_id": None if device.type != "cuda" else gpu_device_id,
     }
 
 
