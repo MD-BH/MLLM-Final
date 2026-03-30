@@ -44,10 +44,7 @@ def _run_decoder_forward(
     captured: Dict[str, torch.Tensor] = {}
     decoder_layers = model.decoder.layers
 
-    if layer_index < 0 or layer_index >= len(decoder_layers):
-        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
-
-    layer = decoder_layers[layer_index]
+    layer = _get_decoder_layer(decoder_layers, layer_index)
 
     def hook(_module, _inputs, output):
         hidden, attn = output
@@ -78,22 +75,17 @@ def _prepare_paired_patch_context(
     target_sentence: str,
     context: Dict[str, object],
 ) -> Dict[str, object]:
-    task = context["task"]
-    model = context["model"]
-    device = context["device"]
-    args = context["args"]
-    tgt_dict = task.target_dictionary
+    tgt_dict = context["task"].target_dictionary
 
     source_encoder = get_encoder_output(source_sentence, context)
     target_encoder = get_encoder_output(target_sentence, context)
-    source_encoder_out = _move_encoder_out_to_device(clone_encoder_out(source_encoder["encoder_out"]), device)
-    target_encoder_out = _move_encoder_out_to_device(clone_encoder_out(target_encoder["encoder_out"]), device)
+    source_encoder_out = _move_encoder_out_to_device(clone_encoder_out(source_encoder["encoder_out"]), context["device"])
+    target_encoder_out = _move_encoder_out_to_device(clone_encoder_out(target_encoder["encoder_out"]), context["device"])
 
     return {
-        "task": task,
-        "model": model,
-        "device": device,
-        "args": args,
+        "model": context["model"],
+        "device": context["device"],
+        "args": context["args"],
         "tgt_dict": tgt_dict,
         "source_encoder": source_encoder,
         "target_encoder": target_encoder,
@@ -116,13 +108,29 @@ def _prepare_target_reference(
     decoding_iterations: int,
 ):
     tgt_dict = context["task"].target_dictionary
-    target_encoder = get_encoder_output(target_sentence, context)
     target_reference = decode_from_encoder_output(
-        target_encoder["encoder_out"],
+        get_encoder_output(target_sentence, context)["encoder_out"],
         context=context,
         decoding_iterations=decoding_iterations,
     )
-    return target_encoder, target_reference, tgt_dict
+    return target_reference, tgt_dict
+
+
+def _get_decoder_layer(decoder_layers, layer_index: int):
+    if layer_index < 0 or layer_index >= len(decoder_layers):
+        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
+    return decoder_layers[layer_index]
+
+
+def _get_attention_module(decoder_layers, layer_index: int, attention_type: str):
+    spec = _get_attention_patch_spec(attention_type)
+    layer = _get_decoder_layer(decoder_layers, layer_index)
+    module = getattr(layer, spec["module_attr"])
+    if module is None:
+        if attention_type == "cross":
+            raise ValueError(f"decoder layer {layer_index} does not have cross-attention")
+        raise ValueError(f"decoder layer {layer_index} does not have {spec['module_attr']}")
+    return spec, module
 
 
 def _apply_masked_token_updates(
@@ -136,6 +144,42 @@ def _apply_masked_token_updates(
     tgt_tokens[0, mask_ind] = new_tgt_tokens[0, mask_ind]
     updated_token_probs[0, mask_ind] = new_token_probs[0, mask_ind]
     return tgt_tokens, updated_token_probs
+
+
+def _run_decoder_initial_step(
+    tgt_tokens: torch.Tensor,
+    forward_fn,
+):
+    decoder_out, capture = forward_fn(tgt_tokens)
+    tgt_tokens, token_probs, _ = generate_step_with_prob(decoder_out)
+    return tgt_tokens, token_probs, capture
+
+
+def _run_masked_decoder_iteration_step(
+    tgt_tokens: torch.Tensor,
+    token_probs: torch.Tensor,
+    tgt_dict,
+    counter: int,
+    iterations: int,
+    forward_fn,
+):
+    masked_tokens, mask_ind, selected_mask_token_ids, selected_mask_scores = _mask_tokens_for_iteration(
+        tgt_tokens,
+        token_probs,
+        tgt_dict,
+        counter,
+        iterations,
+    )
+    decoder_out, capture = forward_fn(masked_tokens)
+    new_tgt_tokens, new_token_probs, _ = generate_step_with_prob(decoder_out)
+    tgt_tokens, token_probs = _apply_masked_token_updates(
+        masked_tokens,
+        token_probs,
+        mask_ind,
+        new_tgt_tokens,
+        new_token_probs,
+    )
+    return tgt_tokens, token_probs, capture, selected_mask_token_ids, selected_mask_scores
 
 
 def _build_patch_trace_step(
@@ -276,22 +320,25 @@ def decoder_patching(
     patch_trace: List[Dict[str, object]] = []
 
     with torch.no_grad():
-        source_decoder_out, source_capture = _run_decoder_forward(
-            model,
+        source_tgt_tokens, source_token_probs, source_capture = _run_decoder_initial_step(
             source_tgt_tokens,
-            source_encoder_out,
-            layer_index,
+            lambda tokens: _run_decoder_forward(
+                model,
+                tokens,
+                source_encoder_out,
+                layer_index,
+            ),
         )
-        source_tgt_tokens, source_token_probs, _ = generate_step_with_prob(source_decoder_out)
-
-        patched_decoder_out, target_capture = _run_decoder_forward(
-            model,
+        target_tgt_tokens, target_token_probs, target_capture = _run_decoder_initial_step(
             target_tgt_tokens,
-            target_encoder_out,
-            layer_index,
-            source_hidden_state=source_capture["after_patch"],
+            lambda tokens: _run_decoder_forward(
+                model,
+                tokens,
+                target_encoder_out,
+                layer_index,
+                source_hidden_state=source_capture["after_patch"],
+            ),
         )
-        target_tgt_tokens, target_token_probs, _ = generate_step_with_prob(patched_decoder_out)
 
         _record_iteration(iteration_trace, 0, target_tgt_tokens, target_token_probs, tgt_dict, args.remove_bpe)
         patch_trace.append(
@@ -308,49 +355,33 @@ def decoder_patching(
         )
 
         for counter in range(1, iterations):
-            source_masked_tokens, source_mask_ind, _, _ = _mask_tokens_for_iteration(
+            source_tgt_tokens, source_token_probs, source_capture, _, _ = _run_masked_decoder_iteration_step(
                 source_tgt_tokens,
                 source_token_probs,
                 tgt_dict,
                 counter,
                 iterations,
-            )
-            source_decoder_out, source_capture = _run_decoder_forward(
-                model,
-                source_masked_tokens,
-                source_encoder_out,
-                layer_index,
-            )
-            source_new_tgt_tokens, source_new_token_probs, _ = generate_step_with_prob(source_decoder_out)
-            source_tgt_tokens, source_token_probs = _apply_masked_token_updates(
-                source_masked_tokens,
-                source_token_probs,
-                source_mask_ind,
-                source_new_tgt_tokens,
-                source_new_token_probs,
+                lambda tokens: _run_decoder_forward(
+                    model,
+                    tokens,
+                    source_encoder_out,
+                    layer_index,
+                ),
             )
 
-            target_masked_tokens, target_mask_ind, selected_mask_token_ids, selected_mask_scores = _mask_tokens_for_iteration(
+            target_tgt_tokens, target_token_probs, target_capture, selected_mask_token_ids, selected_mask_scores = _run_masked_decoder_iteration_step(
                 target_tgt_tokens,
                 target_token_probs,
                 tgt_dict,
                 counter,
                 iterations,
-            )
-            patched_decoder_out, target_capture = _run_decoder_forward(
-                model,
-                target_masked_tokens,
-                target_encoder_out,
-                layer_index,
-                source_hidden_state=source_capture["after_patch"],
-            )
-            target_new_tgt_tokens, target_new_token_probs, _ = generate_step_with_prob(patched_decoder_out)
-            target_tgt_tokens, target_token_probs = _apply_masked_token_updates(
-                target_masked_tokens,
-                target_token_probs,
-                target_mask_ind,
-                target_new_tgt_tokens,
-                target_new_token_probs,
+                lambda tokens: _run_decoder_forward(
+                    model,
+                    tokens,
+                    target_encoder_out,
+                    layer_index,
+                    source_hidden_state=source_capture["after_patch"],
+                ),
             )
 
             _record_iteration(
@@ -414,7 +445,7 @@ def decoder_layer_sweep(
     model = context["model"]
     decoder_layers = model.decoder.layers
     layer_indices = _normalize_layer_indices(decoder_layers, layer_indices)
-    _, target_reference, tgt_dict = _prepare_target_reference(
+    target_reference, tgt_dict = _prepare_target_reference(
         target_sentence=target_sentence,
         context=context,
         decoding_iterations=decoding_iterations,
@@ -519,19 +550,13 @@ def _run_decoder_attention_patch_forward(
     token_position: Optional[int] = None,
     source_attention_state: Optional[torch.Tensor] = None,
 ):
-    spec = _get_attention_patch_spec(attention_type)
     captured: Dict[str, torch.Tensor] = {}
     decoder_layers = model.decoder.layers
 
-    if layer_index < 0 or layer_index >= len(decoder_layers):
-        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
     if token_position is not None and (token_position < 0 or token_position >= tgt_tokens.size(1)):
         raise IndexError(f"token_position {token_position} out of range for decoder length {tgt_tokens.size(1)}")
 
-    layer = decoder_layers[layer_index]
-    module = getattr(layer, spec["module_attr"])
-    if module is None:
-        raise ValueError(f"decoder layer {layer_index} does not have {spec['module_attr']}")
+    spec, module = _get_attention_module(decoder_layers, layer_index, attention_type)
 
     def hook(_module, _inputs, output):
         hidden, attn = output
@@ -585,19 +610,10 @@ def _run_decoder_attention_zero_out_forward(
     head_index: int,
     attention_type: str,
 ):
-    spec = _get_attention_patch_spec(attention_type)
     captured: Dict[str, torch.Tensor] = {}
     decoder_layers = model.decoder.layers
 
-    if layer_index < 0 or layer_index >= len(decoder_layers):
-        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
-
-    layer = decoder_layers[layer_index]
-    attention_module = getattr(layer, spec["module_attr"])
-    if attention_module is None:
-        if attention_type == "cross":
-            raise ValueError(f"decoder layer {layer_index} does not have cross-attention")
-        raise ValueError(f"decoder layer {layer_index} does not have {spec['module_attr']}")
+    spec, attention_module = _get_attention_module(decoder_layers, layer_index, attention_type)
 
     num_heads = attention_module.num_heads
     head_dim = attention_module.head_dim
@@ -709,26 +725,29 @@ def decoder_attention_patching(
     patch_trace: List[Dict[str, object]] = []
 
     with torch.no_grad():
-        source_decoder_out, source_capture = _run_decoder_attention_patch_forward(
-            model,
+        source_tgt_tokens, source_token_probs, source_capture = _run_decoder_initial_step(
             source_tgt_tokens,
-            source_encoder_out,
-            layer_index,
-            attention_type=attention_type,
-            token_position=token_position,
+            lambda tokens: _run_decoder_attention_patch_forward(
+                model,
+                tokens,
+                source_encoder_out,
+                layer_index,
+                attention_type=attention_type,
+                token_position=token_position,
+            ),
         )
-        source_tgt_tokens, source_token_probs, _ = generate_step_with_prob(source_decoder_out)
-
-        patched_decoder_out, target_capture = _run_decoder_attention_patch_forward(
-            model,
+        target_tgt_tokens, target_token_probs, target_capture = _run_decoder_initial_step(
             target_tgt_tokens,
-            target_encoder_out,
-            layer_index,
-            attention_type=attention_type,
-            token_position=token_position,
-            source_attention_state=source_capture["after_patch"] if 0 in patch_iteration_set else None,
+            lambda tokens: _run_decoder_attention_patch_forward(
+                model,
+                tokens,
+                target_encoder_out,
+                layer_index,
+                attention_type=attention_type,
+                token_position=token_position,
+                source_attention_state=source_capture["after_patch"] if 0 in patch_iteration_set else None,
+            ),
         )
-        target_tgt_tokens, target_token_probs, _ = generate_step_with_prob(patched_decoder_out)
 
         _record_iteration(iteration_trace, 0, target_tgt_tokens, target_token_probs, tgt_dict, args.remove_bpe)
         patch_trace.append(
@@ -748,53 +767,37 @@ def decoder_attention_patching(
         )
 
         for counter in range(1, iterations):
-            source_masked_tokens, source_mask_ind, _, _ = _mask_tokens_for_iteration(
+            source_tgt_tokens, source_token_probs, source_capture, _, _ = _run_masked_decoder_iteration_step(
                 source_tgt_tokens,
                 source_token_probs,
                 tgt_dict,
                 counter,
                 iterations,
-            )
-            source_decoder_out, source_capture = _run_decoder_attention_patch_forward(
-                model,
-                source_masked_tokens,
-                source_encoder_out,
-                layer_index,
-                attention_type=attention_type,
-                token_position=token_position,
-            )
-            source_new_tgt_tokens, source_new_token_probs, _ = generate_step_with_prob(source_decoder_out)
-            source_tgt_tokens, source_token_probs = _apply_masked_token_updates(
-                source_masked_tokens,
-                source_token_probs,
-                source_mask_ind,
-                source_new_tgt_tokens,
-                source_new_token_probs,
+                lambda tokens: _run_decoder_attention_patch_forward(
+                    model,
+                    tokens,
+                    source_encoder_out,
+                    layer_index,
+                    attention_type=attention_type,
+                    token_position=token_position,
+                ),
             )
 
-            target_masked_tokens, target_mask_ind, selected_mask_token_ids, selected_mask_scores = _mask_tokens_for_iteration(
+            target_tgt_tokens, target_token_probs, target_capture, selected_mask_token_ids, selected_mask_scores = _run_masked_decoder_iteration_step(
                 target_tgt_tokens,
                 target_token_probs,
                 tgt_dict,
                 counter,
                 iterations,
-            )
-            patched_decoder_out, target_capture = _run_decoder_attention_patch_forward(
-                model,
-                target_masked_tokens,
-                target_encoder_out,
-                layer_index,
-                attention_type=attention_type,
-                token_position=token_position,
-                source_attention_state=source_capture["after_patch"] if counter in patch_iteration_set else None,
-            )
-            target_new_tgt_tokens, target_new_token_probs, _ = generate_step_with_prob(patched_decoder_out)
-            target_tgt_tokens, target_token_probs = _apply_masked_token_updates(
-                target_masked_tokens,
-                target_token_probs,
-                target_mask_ind,
-                target_new_tgt_tokens,
-                target_new_token_probs,
+                lambda tokens: _run_decoder_attention_patch_forward(
+                    model,
+                    tokens,
+                    target_encoder_out,
+                    layer_index,
+                    attention_type=attention_type,
+                    token_position=token_position,
+                    source_attention_state=source_capture["after_patch"] if counter in patch_iteration_set else None,
+                ),
             )
 
             _record_iteration(
@@ -886,15 +889,17 @@ def decoder_attention_zero_out(
     patch_trace: List[Dict[str, object]] = []
 
     with torch.no_grad():
-        decoder_out, capture = _run_decoder_attention_zero_out_forward(
-            model,
+        target_tgt_tokens, target_token_probs, capture = _run_decoder_initial_step(
             target_tgt_tokens,
-            target_encoder_out,
-            layer_index,
-            head_index,
-            attention_type=attention_type,
+            lambda tokens: _run_decoder_attention_zero_out_forward(
+                model,
+                tokens,
+                target_encoder_out,
+                layer_index,
+                head_index,
+                attention_type=attention_type,
+            ),
         )
-        target_tgt_tokens, target_token_probs, _ = generate_step_with_prob(decoder_out)
         _record_iteration(iteration_trace, 0, target_tgt_tokens, target_token_probs, tgt_dict, args.remove_bpe)
         patch_trace.append(
             _build_zero_out_trace_step(
@@ -908,28 +913,20 @@ def decoder_attention_zero_out(
         )
 
         for counter in range(1, iterations):
-            target_masked_tokens, target_mask_ind, selected_mask_token_ids, selected_mask_scores = _mask_tokens_for_iteration(
+            target_tgt_tokens, target_token_probs, capture, selected_mask_token_ids, selected_mask_scores = _run_masked_decoder_iteration_step(
                 target_tgt_tokens,
                 target_token_probs,
                 tgt_dict,
                 counter,
                 iterations,
-            )
-            decoder_out, capture = _run_decoder_attention_zero_out_forward(
-                model,
-                target_masked_tokens,
-                target_encoder_out,
-                layer_index,
-                head_index,
-                attention_type=attention_type,
-            )
-            target_new_tgt_tokens, target_new_token_probs, _ = generate_step_with_prob(decoder_out)
-            target_tgt_tokens, target_token_probs = _apply_masked_token_updates(
-                target_masked_tokens,
-                target_token_probs,
-                target_mask_ind,
-                target_new_tgt_tokens,
-                target_new_token_probs,
+                lambda tokens: _run_decoder_attention_zero_out_forward(
+                    model,
+                    tokens,
+                    target_encoder_out,
+                    layer_index,
+                    head_index,
+                    attention_type=attention_type,
+                ),
             )
 
             _record_iteration(
@@ -1000,18 +997,10 @@ def decoder_attention_zero_out_sweep(
         tgt_sentence,
     )
 
-    spec = _get_attention_patch_spec(attention_type)
     patch_mode = _get_attention_zero_out_patch_mode(attention_type)
     model = context["model"]
     decoder_layers = model.decoder.layers
-    if layer_index < 0 or layer_index >= len(decoder_layers):
-        raise IndexError(f"layer_index {layer_index} out of range for {len(decoder_layers)} decoder layers")
-
-    attention_module = getattr(decoder_layers[layer_index], spec["module_attr"])
-    if attention_module is None:
-        if attention_type == "cross":
-            raise ValueError(f"decoder layer {layer_index} does not have cross-attention")
-        raise ValueError(f"decoder layer {layer_index} does not have {spec['module_attr']}")
+    spec, attention_module = _get_attention_module(decoder_layers, layer_index, attention_type)
 
     num_heads = attention_module.num_heads
     if head_indices is None:
@@ -1172,7 +1161,7 @@ def decoder_attention_layer_iteration_sweep(
     model = context["model"]
     decoder_layers = model.decoder.layers
     layer_indices = _normalize_layer_indices(decoder_layers, layer_indices)
-    _, target_reference, tgt_dict = _prepare_target_reference(
+    target_reference, tgt_dict = _prepare_target_reference(
         target_sentence=target_sentence,
         context=context,
         decoding_iterations=decoding_iterations,
