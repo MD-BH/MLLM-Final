@@ -195,6 +195,37 @@ def plot_cross_attn_full_layer_iteration_heatmap(
     plt.show()
 
 
+def _render_attention_zero_out_heatmap(
+    ax,
+    heatmap,
+    *,
+    head_indices,
+    iterations,
+    title: str,
+    ylabel: str,
+    cmap: str = "magma",
+    vmin=None,
+    vmax=None,
+):
+    if not heatmap:
+        raise ValueError("heatmap is empty")
+
+    image = ax.imshow(
+        heatmap,
+        aspect="auto",
+        cmap=cmap,
+        origin="lower",
+        vmin=np.percentile(heatmap, 1) if vmin is None else vmin,
+        vmax=np.percentile(heatmap, 99) if vmax is None else vmax,
+    )
+    ax.set_xticks(range(len(iterations)), iterations)
+    ax.set_yticks(range(len(head_indices)), head_indices)
+    ax.set_xlabel("Decoding Iteration")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    return image
+
+
 def _plot_attention_zero_out_heatmap(
     heatmap,
     *,
@@ -205,25 +236,88 @@ def _plot_attention_zero_out_heatmap(
     figsize=(9, 4.5),
     cmap: str = "magma",
 ):
-    if not heatmap:
-        raise ValueError("heatmap is empty")
-
-    plt.figure(figsize=figsize)
-    image = plt.imshow(
+    fig, ax = plt.subplots(figsize=figsize)
+    image = _render_attention_zero_out_heatmap(
+        ax,
         heatmap,
-        aspect="auto",
+        head_indices=head_indices,
+        iterations=iterations,
+        title=title,
+        ylabel=ylabel,
         cmap=cmap,
-        origin="lower",
-        vmin=np.percentile(heatmap, 1),
-        vmax=np.percentile(heatmap, 99),
     )
-    plt.colorbar(image, label="Average Token Mask Probability")
-    plt.xticks(range(len(iterations)), iterations)
-    plt.yticks(range(len(head_indices)), head_indices)
-    plt.xlabel("Decoding Iteration")
-    plt.ylabel(ylabel)
-    plt.title(title)
+    fig.colorbar(image, ax=ax, label="Average Token Mask Probability")
     plt.tight_layout()
+    plt.show()
+
+
+def _plot_attention_zero_out_layer_sweep_grid(
+    layer_sweep_result: Dict[str, object],
+    *,
+    attention_label: str,
+    ylabel: str,
+    figsize=(16, 9),
+    cmap: str = "magma",
+):
+    average_layer_indices = layer_sweep_result["average_layer_indices"]
+    if not average_layer_indices:
+        raise ValueError("layer_sweep_result['average_layer_indices'] is empty")
+
+    layer_result_map = {
+        layer_result["layer_index"]: layer_result
+        for layer_result in layer_sweep_result["layer_results"]
+    }
+    selected_layer_results = [
+        layer_result_map[layer_index]
+        for layer_index in average_layer_indices
+    ]
+
+    if len(selected_layer_results) > 5:
+        raise ValueError("2x3 subplot layout supports at most 5 layer heatmaps plus 1 average heatmap")
+
+    heatmaps = [layer_result["heatmap"] for layer_result in selected_layer_results]
+    heatmaps.append(layer_sweep_result["average_heatmap"])
+    flattened_values = np.concatenate([np.asarray(heatmap, dtype=float).ravel() for heatmap in heatmaps])
+    vmin = np.percentile(flattened_values, 1)
+    vmax = np.percentile(flattened_values, 99)
+    if vmin == vmax:
+        vmax = vmin + 1e-6
+
+    fig, axes = plt.subplots(2, 3, figsize=figsize)
+    axes = axes.flatten()
+    image = None
+
+    for ax, layer_result in zip(axes, selected_layer_results):
+        image = _render_attention_zero_out_heatmap(
+            ax,
+            layer_result["heatmap"],
+            head_indices=layer_result["head_indices"],
+            iterations=layer_result["iterations"],
+            title=f"{attention_label} layer {layer_result['layer_index']}",
+            ylabel=ylabel,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
+
+    average_ax = axes[len(selected_layer_results)]
+    image = _render_attention_zero_out_heatmap(
+        average_ax,
+        layer_sweep_result["average_heatmap"],
+        head_indices=layer_sweep_result["head_indices"],
+        iterations=layer_sweep_result["iterations"],
+        title=f"{attention_label} average {average_layer_indices}",
+        ylabel=ylabel,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+    )
+
+    for ax in axes[len(selected_layer_results) + 1:]:
+        ax.axis("off")
+
+    fig.colorbar(image, ax=axes.tolist(), label="Average Token Mask Probability", shrink=0.9)
+    fig.tight_layout()
     plt.show()
 
 
@@ -277,20 +371,30 @@ def plot_cross_attn_zero_out_heatmap(
 
 def plot_self_attn_zero_out_layer_sweep_heatmaps(
     layer_sweep_result: Dict[str, object],
-    figsize=(9, 4.5),
+    figsize=(16, 9),
     cmap: str = "magma",
 ):
-    for layer_result in layer_sweep_result["layer_results"]:
-        plot_self_attn_zero_out_heatmap(layer_result, figsize=figsize, cmap=cmap)
+    _plot_attention_zero_out_layer_sweep_grid(
+        layer_sweep_result,
+        attention_label="Self-Attn Zero-Out",
+        ylabel="Self-Attn Head",
+        figsize=figsize,
+        cmap=cmap,
+    )
 
 
 def plot_cross_attn_zero_out_layer_sweep_heatmaps(
     layer_sweep_result: Dict[str, object],
-    figsize=(9, 4.5),
+    figsize=(16, 9),
     cmap: str = "magma",
 ):
-    for layer_result in layer_sweep_result["layer_results"]:
-        plot_cross_attn_zero_out_heatmap(layer_result, figsize=figsize, cmap=cmap)
+    _plot_attention_zero_out_layer_sweep_grid(
+        layer_sweep_result,
+        attention_label="Cross-Attn Zero-Out",
+        ylabel="Cross-Attn Head",
+        figsize=figsize,
+        cmap=cmap,
+    )
 
 
 def plot_self_attn_zero_out_average_heatmap(
